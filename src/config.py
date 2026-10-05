@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     DATABASE_URL: str = Field(validation_alias=AliasChoices("DATABASE_URL", "DB_URL"))
-    JWT_SECRET: str = "development-only-secret"
+    JWT_SECRET: str = "development-only-secret-change-me-now"
     JWT_ALGORITHM: str = "HS256"
     REDIS_URL: str = "redis://localhost:6379/0"
     MAIL_USERNAME: str = ""
