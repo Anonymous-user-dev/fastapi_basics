@@ -66,3 +66,29 @@ def signup_payload():
         "email": "john@example.com",
         "password": "testpass123",
     }
+
+
+@pytest.fixture
+def authenticated_headers(test_client, session_factory, signup_payload, monkeypatch):
+    from sqlalchemy import select
+
+    from src.auth import routes
+    from src.db.models import User
+
+    monkeypatch.setattr(routes.send_email, "delay", lambda *args, **kwargs: None)
+    response = test_client.post("/api/v1/auth/signup", json=signup_payload)
+    assert response.status_code == 201
+
+    async def verify_user():
+        async with session_factory() as session:
+            user = await session.scalar(select(User).where(User.email == signup_payload["email"]))
+            user.is_verified = True
+            await session.commit()
+
+    asyncio.run(verify_user())
+    login = test_client.post(
+        "/api/v1/auth/login",
+        json={"email": signup_payload["email"], "password": signup_payload["password"]},
+    )
+    assert login.status_code == 200
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}

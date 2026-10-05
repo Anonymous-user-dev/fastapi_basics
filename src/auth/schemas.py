@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from src.books.schemas import Book, ReviewInBook
+
 
 class UserCreateModel(BaseModel):
     first_name: str = Field(min_length=1, max_length=25)
@@ -27,8 +29,8 @@ class UserModel(BaseModel):
 
 
 class UserBooksModel(UserModel):
-    books: list = Field(default_factory=list)
-    reviews: list = Field(default_factory=list)
+    books: list[Book] = Field(default_factory=list)
+    reviews: list[ReviewInBook] = Field(default_factory=list)
 
 
 class SignupResponse(BaseModel):
