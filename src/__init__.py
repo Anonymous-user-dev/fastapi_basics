@@ -1,21 +1,13 @@
 from fastapi import FastAPI
-from src.books.routes import book_router
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print(f"Server is starting... ")
-    yield
-    print(f"Server has been stopped")
 
 version = "v1"
+version_prefix = f"/api/{version}"
 
 app = FastAPI(
     title="Bookly",
     description="A REST API for a book review web service",
     version=version,
-    lifespan=lifespan
+    openapi_url=f"{version_prefix}/openapi.json",
+    docs_url=f"{version_prefix}/docs",
+    redoc_url=f"{version_prefix}/redoc",
 )
-
-app.include_router(book_router, prefix=f"/api/{version}/books", tags=['books'])
-
