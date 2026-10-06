@@ -1,5 +1,7 @@
 import asyncio
+from pathlib import Path
 
+import yaml
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, select
@@ -139,6 +141,13 @@ def test_duplicate_tag_name_is_rejected(test_client, authenticated_headers):
     assert response.json()["error_code"] == "tag_exists"
 
 
+def test_blank_tag_name_is_rejected(test_client, authenticated_headers):
+    response = test_client.post(
+        TAGS_PREFIX + "/", json={"name": "   "}, headers=authenticated_headers
+    )
+    assert response.status_code == 422
+
+
 def test_add_tags_to_book(test_client, authenticated_headers):
     book_uid = test_client.post(
         BOOKS_PREFIX + "/", json=_book_payload("Tagged Book"), headers=authenticated_headers
@@ -151,6 +160,21 @@ def test_add_tags_to_book(test_client, authenticated_headers):
     assert response.status_code == 200
     detail = test_client.get(f"{BOOKS_PREFIX}/{book_uid}", headers=authenticated_headers)
     assert {tag["name"] for tag in detail.json()["tags"]} == {"fiction", "classic"}
+
+
+def test_repeated_tag_in_one_request_is_added_once(test_client, authenticated_headers):
+    book_uid = test_client.post(
+        BOOKS_PREFIX + "/", json=_book_payload("Tagged Book"), headers=authenticated_headers
+    ).json()["uid"]
+
+    response = test_client.post(
+        f"{TAGS_PREFIX}/book/{book_uid}/tags",
+        json={"tags": [{"name": "fiction"}, {"name": "fiction"}]},
+        headers=authenticated_headers,
+    )
+
+    assert response.status_code == 200
+    assert [tag["name"] for tag in response.json()["tags"]] == ["fiction"]
 
 
 def test_add_and_get_five_star_review(test_client, authenticated_headers):
@@ -235,6 +259,14 @@ def test_application_infrastructure(test_client):
     assert cors.status_code == 200
     assert cors.headers["access-control-allow-origin"] == "https://example.com"
     assert test_client.get(app.openapi_url, headers={"Host": "evil.example"}).status_code == 400
+
+
+def test_celery_service_receives_application_configuration():
+    compose = yaml.safe_load(Path("compose.yml").read_text())
+    celery_environment = compose["services"]["celery"]["environment"]
+
+    assert "DATABASE_URL" in celery_environment
+    assert "JWT_SECRET" in celery_environment
 
 
 def test_mail_message_is_html():

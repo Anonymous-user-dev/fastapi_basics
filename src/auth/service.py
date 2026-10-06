@@ -1,7 +1,9 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import User
+from src.errors import UserAlreadyExists
 
 from .schemas import UserCreateModel
 from .utils import generate_passwd_hash
@@ -14,6 +16,9 @@ class UserService:
     async def user_exists(self, email: str, session: AsyncSession) -> bool:
         return await self.get_user_by_email(email, session) is not None
 
+    async def get_user_by_username(self, username: str, session: AsyncSession) -> User | None:
+        return await session.scalar(select(User).where(User.username == username))
+
     async def create_user(self, user_data: UserCreateModel, session: AsyncSession) -> User:
         values = user_data.model_dump(exclude={"password"})
         user = User(
@@ -22,7 +27,11 @@ class UserService:
             role="user",
         )
         session.add(user)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as error:
+            await session.rollback()
+            raise UserAlreadyExists() from error
         await session.refresh(user)
         return user
 

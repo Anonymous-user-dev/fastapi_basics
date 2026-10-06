@@ -61,7 +61,9 @@ async def create_user_account(
     user_data: UserCreateModel,
     session: SessionDep,
 ) -> dict:
-    if await user_service.user_exists(str(user_data.email), session):
+    if await user_service.user_exists(
+        str(user_data.email), session
+    ) or await user_service.get_user_by_username(user_data.username, session):
         raise UserAlreadyExists()
     new_user = await user_service.create_user(user_data, session)
     token = create_url_safe_token({"email": str(user_data.email)})

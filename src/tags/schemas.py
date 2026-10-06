@@ -18,7 +18,10 @@ class TagCreateModel(BaseModel):
     @field_validator("name")
     @classmethod
     def normalize_name(cls, value: str) -> str:
-        return value.strip().lower()
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("Tag name cannot be blank")
+        return normalized
 
 
 class TagAddModel(BaseModel):

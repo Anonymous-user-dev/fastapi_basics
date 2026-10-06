@@ -62,6 +62,17 @@ def test_signup_rejects_duplicate_email(test_client, signup_payload, monkeypatch
     assert response.json()["error_code"] == "user_exists"
 
 
+def test_signup_rejects_duplicate_username(test_client, signup_payload, monkeypatch):
+    _disable_email(monkeypatch)
+    assert test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload).status_code == 201
+    duplicate_username = {**signup_payload, "email": "other@example.com"}
+
+    response = test_client.post(f"{AUTH_PREFIX}/signup", json=duplicate_username)
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "user_exists"
+
+
 def test_login_returns_access_and_refresh_tokens(test_client, signup_payload, monkeypatch):
     _disable_email(monkeypatch)
     test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)

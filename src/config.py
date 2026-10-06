@@ -1,10 +1,12 @@
+import secrets
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     DATABASE_URL: str = Field(validation_alias=AliasChoices("DATABASE_URL", "DB_URL"))
-    JWT_SECRET: str = "development-only-secret-change-me-now"
+    JWT_SECRET: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     JWT_ALGORITHM: str = "HS256"
     REDIS_URL: str = "redis://localhost:6379/0"
     MAIL_USERNAME: str = ""
