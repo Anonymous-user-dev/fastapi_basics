@@ -14,7 +14,7 @@ services:
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_FROM: ${MAIL_FROM:-noreply@example.com}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Bookly}
-      DOMAIN: ${DOMAIN:-localhost:8000}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
       - "8000:8000"
@@ -63,6 +63,7 @@ services:
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_FROM: ${MAIL_FROM:-noreply@example.com}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Bookly}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
     networks:
       - app-network
 

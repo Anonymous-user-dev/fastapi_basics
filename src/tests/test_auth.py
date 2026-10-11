@@ -29,6 +29,38 @@ def test_production_requires_a_strong_jwt_secret():
         )
 
 
+def test_production_requires_https_public_urls():
+    from src.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(
+            DATABASE_URL="sqlite+aiosqlite:///:memory:",
+            ENVIRONMENT="production",
+            JWT_SECRET="a-production-secret-that-is-long-enough",
+            PUBLIC_BASE_URL="http://books.example.com",
+            _env_file=None,
+        )
+
+
+def test_signup_uses_configured_public_url_in_verification_email(
+    test_client, signup_payload, monkeypatch
+):
+    from src import celery_tasks
+    from src.auth import routes
+
+    queued_messages = []
+    monkeypatch.setattr(
+        celery_tasks.send_email,
+        "delay",
+        lambda recipients, subject, body: queued_messages.append(body),
+    )
+    monkeypatch.setattr(routes.settings, "PUBLIC_BASE_URL", "https://books.example.com")
+
+    response = test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
+
+    assert response.status_code == 201
+    assert 'href="https://books.example.com/api/v1/auth/verify/' in queued_messages[0]
+
 def _disable_email(monkeypatch):
     from src import celery_tasks
 

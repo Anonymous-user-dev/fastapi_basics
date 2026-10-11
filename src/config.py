@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEVELOPMENT_JWT_SECRET = "development-only-secret-change-before-deploying"
@@ -22,12 +22,14 @@ class Settings(BaseSettings):
     MAIL_SSL_TLS: bool = False
     USE_CREDENTIALS: bool = True
     VALIDATE_CERTS: bool = True
-    DOMAIN: str = "localhost:8000"
+    PUBLIC_BASE_URL: AnyHttpUrl = "http://localhost:8000"
 
     @model_validator(mode="after")
     def require_production_jwt_secret(self):
         if self.ENVIRONMENT == "production" and self.JWT_SECRET == DEVELOPMENT_JWT_SECRET:
             raise ValueError("JWT_SECRET must be set explicitly in production")
+        if self.ENVIRONMENT == "production" and self.PUBLIC_BASE_URL.scheme != "https":
+            raise ValueError("PUBLIC_BASE_URL must use HTTPS in production")
         return self
 
     model_config = SettingsConfigDict(

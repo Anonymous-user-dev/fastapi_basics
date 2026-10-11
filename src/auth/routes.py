@@ -81,7 +81,8 @@ async def create_user_account(
         raise UserAlreadyExists()
     new_user = await user_service.create_user(user_data, session)
     token = create_verification_token({"email": str(user_data.email)})
-    link = f"http://{settings.DOMAIN}/api/v1/auth/verify/{token}"
+    base_url = str(settings.PUBLIC_BASE_URL).rstrip("/")
+    link = f"{base_url}/api/v1/auth/verify/{token}"
     queue_email(
         [str(user_data.email)],
         "Verify Your email",
@@ -171,7 +172,8 @@ async def revoke_token(token_details: AccessTokenDep) -> JSONResponse:
 @auth_router.post("/password-reset-request")
 async def password_reset_request(email_data: PasswordResetRequestModel) -> JSONResponse:
     token = create_password_reset_token({"email": str(email_data.email)})
-    link = f"http://{settings.DOMAIN}/api/v1/auth/password-reset-confirm/{token}"
+    base_url = str(settings.PUBLIC_BASE_URL).rstrip("/")
+    link = f"{base_url}/api/v1/auth/password-reset-confirm/{token}"
     queue_email(
         [str(email_data.email)],
         "Reset Your Password",

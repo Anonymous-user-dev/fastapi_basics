@@ -36,7 +36,7 @@ def register_middleware(app: FastAPI) -> None:
         allow_headers=["*"],
         allow_credentials=True,
     )
-    configured_host = settings.DOMAIN.split(":", maxsplit=1)[0]
+    configured_host = settings.PUBLIC_BASE_URL.host
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=[
