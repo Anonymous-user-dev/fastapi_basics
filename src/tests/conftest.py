@@ -25,6 +25,7 @@ def use_memory_token_blocklist(monkeypatch):
     from src.db import redis
 
     redis._memory_blocklist.clear()
+    redis._memory_session_blocklist.clear()
     monkeypatch.setattr(redis, "token_blocklist", None)
     monkeypatch.setattr("src.auth.dependencies.token_in_blocklist", redis.token_in_blocklist)
     monkeypatch.setattr("src.auth.routes.add_jti_to_blocklist", redis.add_jti_to_blocklist)

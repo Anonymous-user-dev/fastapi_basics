@@ -152,6 +152,14 @@ def test_refresh_endpoint_rejects_access_token_and_accepts_refresh_token(
     assert access_response.status_code == 403
     assert refresh_response.status_code == 200
     assert refresh_response.json()["access_token"]
+    assert refresh_response.json()["refresh_token"]
+
+    reused_refresh = test_client.get(
+        f"{AUTH_PREFIX}/refresh_token",
+        headers={"Authorization": f"Bearer {tokens['refresh_token']}"},
+    )
+    assert reused_refresh.status_code == 401
+    assert reused_refresh.json()["error_code"] == "token_revoked"
 
 
 def test_password_reset_changes_login_password(test_client, signup_payload, monkeypatch):
@@ -215,6 +223,27 @@ def test_logout_revokes_access_token(test_client, session_factory, signup_payloa
 
     assert test_client.get(f"{AUTH_PREFIX}/logout", headers=headers).status_code == 200
     response = test_client.get(f"{AUTH_PREFIX}/me", headers=headers)
+
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "token_revoked"
+
+
+def test_logout_revokes_refresh_token(test_client, signup_payload, monkeypatch):
+    _disable_email(monkeypatch)
+    test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
+    tokens = test_client.post(
+        f"{AUTH_PREFIX}/login",
+        json={"email": signup_payload["email"], "password": signup_payload["password"]},
+    ).json()
+
+    test_client.get(
+        f"{AUTH_PREFIX}/logout",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    response = test_client.get(
+        f"{AUTH_PREFIX}/refresh_token",
+        headers={"Authorization": f"Bearer {tokens['refresh_token']}"},
+    )
 
     assert response.status_code == 401
     assert response.json()["error_code"] == "token_revoked"

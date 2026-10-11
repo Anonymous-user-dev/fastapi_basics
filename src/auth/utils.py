@@ -34,6 +34,7 @@ def create_access_token(
     user_data: dict,
     expiry: timedelta | None = None,
     refresh: bool = False,
+    session_id: str | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -41,6 +42,7 @@ def create_access_token(
         "iat": now,
         "exp": now + (expiry or timedelta(seconds=ACCESS_TOKEN_EXPIRY)),
         "jti": str(uuid.uuid4()),
+        "sid": session_id or str(uuid.uuid4()),
         "refresh": refresh,
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)

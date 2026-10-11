@@ -1,4 +1,5 @@
-from datetime import timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -10,8 +11,14 @@ from src.celery_tasks import send_email
 from src.config import settings
 from src.db.main import get_session
 from src.db.models import User
-from src.db.redis import add_jti_to_blocklist
-from src.errors import InvalidCredentials, InvalidToken, UserAlreadyExists, UserNotFound
+from src.db.redis import add_jti_to_blocklist, consume_refresh_token, revoke_session
+from src.errors import (
+    InvalidCredentials,
+    InvalidToken,
+    RevokedToken,
+    UserAlreadyExists,
+    UserNotFound,
+)
 
 from .dependencies import (
     AccessTokenBearer,
@@ -100,11 +107,13 @@ async def login_users(
     if user is None or not verify_password(login_data.password, user.password_hash):
         raise InvalidCredentials()
     user_data = {"email": user.email, "user_uid": str(user.uid), "role": user.role}
-    access_token = create_access_token(user_data=user_data)
+    session_id = str(uuid.uuid4())
+    access_token = create_access_token(user_data=user_data, session_id=session_id)
     refresh_token = create_access_token(
         user_data=user_data,
         refresh=True,
         expiry=timedelta(days=REFRESH_TOKEN_EXPIRY),
+        session_id=session_id,
     )
     return JSONResponse(
         {
@@ -118,7 +127,23 @@ async def login_users(
 
 @auth_router.get("/refresh_token")
 async def get_new_access_token(token_details: RefreshTokenDep) -> JSONResponse:
-    return JSONResponse({"access_token": create_access_token(token_details["user"])})
+    expires_in = max(
+        int(token_details["exp"] - datetime.now(timezone.utc).timestamp()),
+        1,
+    )
+    if not await consume_refresh_token(token_details["jti"], expires_in):
+        raise RevokedToken()
+    session_id = token_details["sid"]
+    access_token = create_access_token(token_details["user"], session_id=session_id)
+    refresh_token = create_access_token(
+        token_details["user"],
+        refresh=True,
+        expiry=timedelta(days=REFRESH_TOKEN_EXPIRY),
+        session_id=session_id,
+    )
+    return JSONResponse(
+        {"access_token": access_token, "refresh_token": refresh_token}
+    )
 
 
 @auth_router.get("/me", response_model=UserBooksModel)
@@ -132,6 +157,10 @@ async def current_user_profile(
 @auth_router.get("/logout")
 async def revoke_token(token_details: AccessTokenDep) -> JSONResponse:
     await add_jti_to_blocklist(token_details["jti"])
+    await revoke_session(
+        token_details["sid"],
+        int(timedelta(days=REFRESH_TOKEN_EXPIRY).total_seconds()),
+    )
     return JSONResponse({"message": "Logged Out Successfully"})
 
 
