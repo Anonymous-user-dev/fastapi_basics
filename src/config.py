@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = Field(default=DEVELOPMENT_JWT_SECRET, min_length=32)
     JWT_ALGORITHM: str = "HS256"
     REDIS_URL: str = "redis://localhost:6379/0"
+    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     MAIL_USERNAME: str = ""
     MAIL_PASSWORD: str = ""
     MAIL_FROM: str = "noreply@example.com"

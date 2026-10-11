@@ -328,10 +328,22 @@ def test_application_infrastructure(test_client):
 
     cors = test_client.options(
         BOOKS_PREFIX + "/",
-        headers={"Origin": "https://example.com", "Access-Control-Request-Method": "GET"},
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        },
     )
     assert cors.status_code == 200
-    assert cors.headers["access-control-allow-origin"] == "https://example.com"
+    assert cors.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+    untrusted_cors = test_client.options(
+        BOOKS_PREFIX + "/",
+        headers={
+            "Origin": "https://untrusted.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert "access-control-allow-origin" not in untrusted_cors.headers
     assert test_client.get(app.openapi_url, headers={"Host": "evil.example"}).status_code == 400
 
 
