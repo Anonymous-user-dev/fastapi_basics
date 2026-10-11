@@ -4,14 +4,16 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import settings
 from src.db.main import get_session
 from src.db.models import User
-from src.db.redis import session_is_revoked, token_in_blocklist
+from src.db.redis import rate_limit_allows, session_is_revoked, token_in_blocklist
 from src.errors import (
     AccessTokenRequired,
     AccountNotVerified,
     InsufficientPermission,
     InvalidToken,
+    RateLimitExceeded,
     RefreshTokenRequired,
     RevokedToken,
     UserNotFound,
@@ -21,6 +23,22 @@ from .service import UserService
 from .utils import decode_token
 
 user_service = UserService()
+
+
+class RateLimiter:
+    def __init__(self, action: str) -> None:
+        self.action = action
+
+    async def __call__(self, request: Request) -> None:
+        client_host = request.client.host if request.client else "unknown"
+        key = f"{self.action}:{client_host}"
+        allowed = await rate_limit_allows(
+            key,
+            settings.AUTH_RATE_LIMIT,
+            settings.AUTH_RATE_WINDOW_SECONDS,
+        )
+        if not allowed:
+            raise RateLimitExceeded()
 
 
 class TokenBearer(HTTPBearer):

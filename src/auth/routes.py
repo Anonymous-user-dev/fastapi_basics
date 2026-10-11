@@ -22,6 +22,7 @@ from src.errors import (
 
 from .dependencies import (
     AccessTokenBearer,
+    RateLimiter,
     RefreshTokenBearer,
     RoleChecker,
     get_current_user,
@@ -50,6 +51,10 @@ auth_router = APIRouter()
 user_service = UserService()
 role_checker = RoleChecker(["admin", "user"])
 admin_role_checker = RoleChecker(["admin"])
+signup_rate_limiter = RateLimiter("signup")
+login_rate_limiter = RateLimiter("login")
+email_rate_limiter = RateLimiter("email")
+password_reset_rate_limiter = RateLimiter("password-reset")
 access_token_bearer = AccessTokenBearer()
 refresh_token_bearer = RefreshTokenBearer()
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -60,7 +65,10 @@ RoleDep = Annotated[bool, Depends(role_checker)]
 REFRESH_TOKEN_EXPIRY = 2
 
 
-@auth_router.post("/send_mail", dependencies=[Depends(admin_role_checker)])
+@auth_router.post(
+    "/send_mail",
+    dependencies=[Depends(admin_role_checker), Depends(email_rate_limiter)],
+)
 async def send_mail(emails: EmailModel) -> dict:
     queue_email(
         [str(address) for address in emails.addresses],
@@ -70,7 +78,12 @@ async def send_mail(emails: EmailModel) -> dict:
     return {"message": "Email sent successfully"}
 
 
-@auth_router.post("/signup", status_code=status.HTTP_201_CREATED, response_model=SignupResponse)
+@auth_router.post(
+    "/signup",
+    status_code=status.HTTP_201_CREATED,
+    response_model=SignupResponse,
+    dependencies=[Depends(signup_rate_limiter)],
+)
 async def create_user_account(
     user_data: UserCreateModel,
     session: SessionDep,
@@ -103,7 +116,7 @@ async def verify_user_account(token: str, session: SessionDep) -> JSONResponse:
     return JSONResponse({"message": "Account verified successfully"})
 
 
-@auth_router.post("/login")
+@auth_router.post("/login", dependencies=[Depends(login_rate_limiter)])
 async def login_users(
     login_data: UserLoginModel,
     session: SessionDep,
@@ -169,7 +182,10 @@ async def revoke_token(token_details: AccessTokenDep) -> JSONResponse:
     return JSONResponse({"message": "Logged Out Successfully"})
 
 
-@auth_router.post("/password-reset-request")
+@auth_router.post(
+    "/password-reset-request",
+    dependencies=[Depends(password_reset_rate_limiter)],
+)
 async def password_reset_request(email_data: PasswordResetRequestModel) -> JSONResponse:
     token = create_password_reset_token({"email": str(email_data.email)})
     base_url = str(settings.PUBLIC_BASE_URL).rstrip("/")

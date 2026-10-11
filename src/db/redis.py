@@ -1,3 +1,5 @@
+from time import monotonic
+
 import redis.asyncio as redis
 
 from src.config import settings
@@ -5,6 +7,7 @@ from src.config import settings
 JTI_EXPIRY = 3600
 _memory_blocklist: set[str] = set()
 _memory_session_blocklist: set[str] = set()
+_memory_rate_limits: dict[str, tuple[int, float]] = {}
 token_blocklist = None if settings.REDIS_URL.startswith("memory://") else redis.from_url(settings.REDIS_URL)
 
 
@@ -53,3 +56,21 @@ async def session_is_revoked(session_id: str) -> bool:
     if token_blocklist is None:
         return session_id in _memory_session_blocklist
     return await token_blocklist.get(f"session:{session_id}") is not None
+
+
+async def rate_limit_allows(key: str, limit: int, window_seconds: int) -> bool:
+    if token_blocklist is None:
+        now = monotonic()
+        count, expires_at = _memory_rate_limits.get(key, (0, now + window_seconds))
+        if now >= expires_at:
+            count, expires_at = 0, now + window_seconds
+        count += 1
+        _memory_rate_limits[key] = (count, expires_at)
+        return count <= limit
+
+    redis_key = f"rate:{key}"
+    async with token_blocklist.pipeline(transaction=True) as pipeline:
+        pipeline.incr(redis_key)
+        pipeline.expire(redis_key, window_seconds, nx=True)
+        count, _ = await pipeline.execute()
+    return count <= limit

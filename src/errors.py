@@ -63,6 +63,10 @@ class AccountNotVerified(BooklyException):
     pass
 
 
+class RateLimitExceeded(BooklyException):
+    pass
+
+
 def create_exception_handler(
     status_code: int, initial_detail: Any
 ) -> Callable[[Request, Exception], JSONResponse]:
@@ -87,6 +91,7 @@ def register_all_errors(app: FastAPI) -> None:
         RefreshTokenRequired: (403, "Please provide a valid refresh token", "refresh_token_required"),
         InsufficientPermission: (403, "Insufficient permissions", "insufficient_permissions"),
         AccountNotVerified: (403, "Account not verified", "account_not_verified"),
+        RateLimitExceeded: (429, "Too many requests", "rate_limit_exceeded"),
     }
     for exception, (status_code, message, error_code) in handlers.items():
         app.add_exception_handler(

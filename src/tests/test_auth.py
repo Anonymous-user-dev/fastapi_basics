@@ -177,6 +177,21 @@ def test_login_rejects_wrong_password(test_client, signup_payload, monkeypatch):
     assert response.json()["error_code"] == "invalid_email_or_password"
 
 
+def test_login_rate_limit_blocks_repeated_attempts(test_client, signup_payload, monkeypatch):
+    _disable_email(monkeypatch)
+    test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
+    login_data = {"email": signup_payload["email"], "password": "incorrect-password"}
+
+    responses = [
+        test_client.post(f"{AUTH_PREFIX}/login", json=login_data)
+        for _ in range(6)
+    ]
+
+    assert [response.status_code for response in responses[:5]] == [400] * 5
+    assert responses[5].status_code == 429
+    assert responses[5].json()["error_code"] == "rate_limit_exceeded"
+
+
 def test_verification_token_marks_account_verified(test_client, session_factory, signup_payload, monkeypatch):
     from src.auth.utils import create_verification_token
 
