@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import RoleChecker, get_current_user
@@ -17,11 +17,17 @@ book_service = BookService()
 role_checker = RoleChecker(["admin", "user"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+PageLimit = Annotated[int, Query(ge=1, le=100)]
+PageOffset = Annotated[int, Query(ge=0)]
 
 
 @book_router.get("/", response_model=list[Book], dependencies=[Depends(role_checker)])
-async def get_all_books(session: SessionDep) -> list[Book]:
-    return await book_service.get_all_books(session)
+async def get_all_books(
+    session: SessionDep,
+    limit: PageLimit = 50,
+    offset: PageOffset = 0,
+) -> list[Book]:
+    return await book_service.get_all_books(session, limit, offset)
 
 
 @book_router.get(
@@ -32,8 +38,10 @@ async def get_all_books(session: SessionDep) -> list[Book]:
 async def get_user_book_submissions(
     user_uid: uuid.UUID,
     session: SessionDep,
+    limit: PageLimit = 50,
+    offset: PageOffset = 0,
 ) -> list[Book]:
-    return await book_service.get_user_books(user_uid, session)
+    return await book_service.get_user_books(user_uid, session, limit, offset)
 
 
 @book_router.post(

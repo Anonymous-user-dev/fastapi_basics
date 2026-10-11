@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import RoleChecker, get_current_user
@@ -17,6 +17,8 @@ admin_role_checker = RoleChecker(["admin"])
 user_role_checker = RoleChecker(["user", "admin"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+PageLimit = Annotated[int, Query(ge=1, le=100)]
+PageOffset = Annotated[int, Query(ge=0)]
 
 
 @review_router.get(
@@ -24,8 +26,12 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
     response_model=list[ReviewModel],
     dependencies=[Depends(admin_role_checker)],
 )
-async def get_all_reviews(session: SessionDep) -> list[ReviewModel]:
-    return await review_service.get_all_reviews(session)
+async def get_all_reviews(
+    session: SessionDep,
+    limit: PageLimit = 50,
+    offset: PageOffset = 0,
+) -> list[ReviewModel]:
+    return await review_service.get_all_reviews(session, limit, offset)
 
 
 @review_router.get(

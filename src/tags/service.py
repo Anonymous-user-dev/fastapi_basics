@@ -13,8 +13,14 @@ book_service = BookService()
 
 
 class TagService:
-    async def get_tags(self, session: AsyncSession) -> list[Tag]:
-        result = await session.scalars(select(Tag).order_by(desc(Tag.created_at)))
+    async def get_tags(
+        self,
+        session: AsyncSession,
+        limit: int,
+        offset: int,
+    ) -> list[Tag]:
+        query = select(Tag).order_by(desc(Tag.created_at)).limit(limit).offset(offset)
+        result = await session.scalars(query)
         return list(result.unique().all())
 
     async def get_tag_by_uid(self, tag_uid: uuid.UUID, session: AsyncSession) -> Tag | None:

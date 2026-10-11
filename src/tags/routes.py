@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import RoleChecker
@@ -15,11 +15,17 @@ tags_router = APIRouter()
 tag_service = TagService()
 role_checker = RoleChecker(["user", "admin"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+PageLimit = Annotated[int, Query(ge=1, le=100)]
+PageOffset = Annotated[int, Query(ge=0)]
 
 
 @tags_router.get("/", response_model=list[TagModel], dependencies=[Depends(role_checker)])
-async def get_all_tags(session: SessionDep) -> list[TagModel]:
-    return await tag_service.get_tags(session)
+async def get_all_tags(
+    session: SessionDep,
+    limit: PageLimit = 50,
+    offset: PageOffset = 0,
+) -> list[TagModel]:
+    return await tag_service.get_tags(session, limit, offset)
 
 
 @tags_router.post(

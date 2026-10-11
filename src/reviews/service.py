@@ -43,8 +43,14 @@ class ReviewService:
             raise ReviewNotFound()
         return review
 
-    async def get_all_reviews(self, session: AsyncSession) -> list[Review]:
-        result = await session.scalars(select(Review).order_by(desc(Review.created_at)))
+    async def get_all_reviews(
+        self,
+        session: AsyncSession,
+        limit: int,
+        offset: int,
+    ) -> list[Review]:
+        query = select(Review).order_by(desc(Review.created_at)).limit(limit).offset(offset)
+        result = await session.scalars(query)
         return list(result.all())
 
     async def delete_review_from_book(

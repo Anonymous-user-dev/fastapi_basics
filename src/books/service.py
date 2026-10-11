@@ -9,14 +9,31 @@ from .schemas import BookCreateModel, BookUpdateModel
 
 
 class BookService:
-    async def get_all_books(self, session: AsyncSession) -> list[Book]:
-        result = await session.scalars(select(Book).order_by(desc(Book.created_at)))
+    async def get_all_books(
+        self,
+        session: AsyncSession,
+        limit: int,
+        offset: int,
+    ) -> list[Book]:
+        query = select(Book).order_by(desc(Book.created_at)).limit(limit).offset(offset)
+        result = await session.scalars(query)
         return list(result.unique().all())
 
-    async def get_user_books(self, user_uid: uuid.UUID, session: AsyncSession) -> list[Book]:
-        result = await session.scalars(
-            select(Book).where(Book.user_uid == user_uid).order_by(desc(Book.created_at))
+    async def get_user_books(
+        self,
+        user_uid: uuid.UUID,
+        session: AsyncSession,
+        limit: int,
+        offset: int,
+    ) -> list[Book]:
+        query = (
+            select(Book)
+            .where(Book.user_uid == user_uid)
+            .order_by(desc(Book.created_at))
+            .limit(limit)
+            .offset(offset)
         )
+        result = await session.scalars(query)
         return list(result.unique().all())
 
     async def get_book(self, book_uid: uuid.UUID, session: AsyncSession) -> Book | None:

@@ -68,6 +68,30 @@ def test_create_and_list_books(test_client, authenticated_headers):
     assert [book["title"] for book in response.json()] == ["Test Book"]
 
 
+def test_book_list_supports_bounded_pagination(test_client, authenticated_headers):
+    for title in ("First", "Second", "Third"):
+        assert test_client.post(
+            BOOKS_PREFIX + "/",
+            json=_book_payload(title),
+            headers=authenticated_headers,
+        ).status_code == 201
+
+    first_page = test_client.get(
+        BOOKS_PREFIX + "/?limit=1&offset=0", headers=authenticated_headers
+    )
+    second_page = test_client.get(
+        BOOKS_PREFIX + "/?limit=1&offset=1", headers=authenticated_headers
+    )
+    excessive_limit = test_client.get(
+        BOOKS_PREFIX + "/?limit=101", headers=authenticated_headers
+    )
+
+    assert len(first_page.json()) == 1
+    assert len(second_page.json()) == 1
+    assert first_page.json()[0]["uid"] != second_page.json()[0]["uid"]
+    assert excessive_limit.status_code == 422
+
+
 def test_book_detail_includes_reviews_and_tags(test_client, authenticated_headers):
     uid = test_client.post(
         BOOKS_PREFIX + "/", json=_book_payload(), headers=authenticated_headers
