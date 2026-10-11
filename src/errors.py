@@ -85,7 +85,7 @@ def register_all_errors(app: FastAPI) -> None:
         RevokedToken: (401, "Token has been revoked", "token_revoked"),
         AccessTokenRequired: (401, "Please provide a valid access token", "access_token_required"),
         RefreshTokenRequired: (403, "Please provide a valid refresh token", "refresh_token_required"),
-        InsufficientPermission: (401, "Insufficient permissions", "insufficient_permissions"),
+        InsufficientPermission: (403, "Insufficient permissions", "insufficient_permissions"),
         AccountNotVerified: (403, "Account not verified", "account_not_verified"),
     }
     for exception, (status_code, message, error_code) in handlers.items():

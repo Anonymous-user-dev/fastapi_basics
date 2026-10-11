@@ -28,6 +28,34 @@ def _book_payload(title="Test Book"):
     }
 
 
+def _headers_for_new_user(test_client, session_factory, monkeypatch, *, role="user"):
+    from src.auth import routes
+
+    user_data = {
+        "first_name": "Jane",
+        "last_name": "Doe",
+        "username": "janedoe",
+        "email": "jane@example.com",
+        "password": "testpass123",
+    }
+    monkeypatch.setattr(routes.send_email, "delay", lambda *args, **kwargs: None)
+    assert test_client.post("/api/v1/auth/signup", json=user_data).status_code == 201
+
+    async def activate_user():
+        async with session_factory() as session:
+            user = await session.scalar(select(User).where(User.email == user_data["email"]))
+            user.is_verified = True
+            user.role = role
+            await session.commit()
+
+    asyncio.run(activate_user())
+    token = test_client.post(
+        "/api/v1/auth/login",
+        json={"email": user_data["email"], "password": user_data["password"]},
+    ).json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
 def test_create_and_list_books(test_client, authenticated_headers):
     created = test_client.post(BOOKS_PREFIX + "/", json=_book_payload(), headers=authenticated_headers)
 
@@ -95,6 +123,52 @@ def test_delete_book_removes_it(test_client, authenticated_headers):
     missing = test_client.get(f"{BOOKS_PREFIX}/{uid}", headers=authenticated_headers)
     assert missing.status_code == 404
     assert missing.json()["error_code"] == "book_not_found"
+
+
+def test_another_user_cannot_update_or_delete_a_book(
+    test_client, authenticated_headers, session_factory, monkeypatch
+):
+    book_uid = test_client.post(
+        BOOKS_PREFIX + "/", json=_book_payload(), headers=authenticated_headers
+    ).json()["uid"]
+    other_user_headers = _headers_for_new_user(
+        test_client, session_factory, monkeypatch
+    )
+
+    update = test_client.patch(
+        f"{BOOKS_PREFIX}/{book_uid}",
+        json={"title": "Someone else's edit"},
+        headers=other_user_headers,
+    )
+    delete = test_client.delete(
+        f"{BOOKS_PREFIX}/{book_uid}", headers=other_user_headers
+    )
+
+    assert update.status_code == 403
+    assert update.json()["error_code"] == "insufficient_permissions"
+    assert delete.status_code == 403
+
+
+def test_admin_can_update_and_delete_any_book(
+    test_client, authenticated_headers, session_factory, monkeypatch
+):
+    book_uid = test_client.post(
+        BOOKS_PREFIX + "/", json=_book_payload(), headers=authenticated_headers
+    ).json()["uid"]
+    admin_headers = _headers_for_new_user(
+        test_client, session_factory, monkeypatch, role="admin"
+    )
+
+    update = test_client.patch(
+        f"{BOOKS_PREFIX}/{book_uid}",
+        json={"title": "Admin edit"},
+        headers=admin_headers,
+    )
+    delete = test_client.delete(f"{BOOKS_PREFIX}/{book_uid}", headers=admin_headers)
+
+    assert update.status_code == 200
+    assert update.json()["title"] == "Admin edit"
+    assert delete.status_code == 204
 
 
 def test_create_book_validates_date_and_page_count(test_client, authenticated_headers):

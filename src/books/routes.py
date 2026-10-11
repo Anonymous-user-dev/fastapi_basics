@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.dependencies import RoleChecker, get_current_user
 from src.db.main import get_session
 from src.db.models import User
-from src.errors import BookNotFound
+from src.errors import BookNotFound, InsufficientPermission
 
 from .schemas import Book, BookCreateModel, BookDetailModel, BookUpdateModel
 from .service import BookService
@@ -71,11 +71,14 @@ async def update_book(
     book_uid: uuid.UUID,
     book_update_data: BookUpdateModel,
     session: SessionDep,
+    current_user: CurrentUserDep,
 ) -> Book:
-    book = await book_service.update_book(book_uid, book_update_data, session)
+    book = await book_service.get_book(book_uid, session)
     if book is None:
         raise BookNotFound()
-    return book
+    if current_user.role != "admin" and book.user_uid != current_user.uid:
+        raise InsufficientPermission()
+    return await book_service.update_book(book, book_update_data, session)
 
 
 @book_router.delete(
@@ -83,7 +86,15 @@ async def update_book(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(role_checker)],
 )
-async def delete_book(book_uid: uuid.UUID, session: SessionDep) -> Response:
-    if not await book_service.delete_book(book_uid, session):
+async def delete_book(
+    book_uid: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+) -> Response:
+    book = await book_service.get_book(book_uid, session)
+    if book is None:
         raise BookNotFound()
+    if current_user.role != "admin" and book.user_uid != current_user.uid:
+        raise InsufficientPermission()
+    await book_service.delete_book(book, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
