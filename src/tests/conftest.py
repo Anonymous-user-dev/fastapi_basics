@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET", "test-secret-that-is-longer-than-32-characters")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 os.environ.setdefault("REDIS_URL", "memory://")
 

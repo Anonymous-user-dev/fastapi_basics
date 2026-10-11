@@ -1,12 +1,15 @@
-import secrets
+from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEVELOPMENT_JWT_SECRET = "development-only-secret-change-before-deploying"
 
 
 class Settings(BaseSettings):
     DATABASE_URL: str = Field(validation_alias=AliasChoices("DATABASE_URL", "DB_URL"))
-    JWT_SECRET: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    ENVIRONMENT: Literal["development", "test", "production"] = "development"
+    JWT_SECRET: str = Field(default=DEVELOPMENT_JWT_SECRET, min_length=32)
     JWT_ALGORITHM: str = "HS256"
     REDIS_URL: str = "redis://localhost:6379/0"
     MAIL_USERNAME: str = ""
@@ -20,6 +23,12 @@ class Settings(BaseSettings):
     USE_CREDENTIALS: bool = True
     VALIDATE_CERTS: bool = True
     DOMAIN: str = "localhost:8000"
+
+    @model_validator(mode="after")
+    def require_production_jwt_secret(self):
+        if self.ENVIRONMENT == "production" and self.JWT_SECRET == DEVELOPMENT_JWT_SECRET:
+            raise ValueError("JWT_SECRET must be set explicitly in production")
+        return self
 
     model_config = SettingsConfigDict(
         env_file=(".env", "src/.env"),

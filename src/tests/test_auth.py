@@ -1,10 +1,32 @@
 import asyncio
 
+import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from src.db.models import User
 
 AUTH_PREFIX = "/api/v1/auth"
+
+
+def test_production_requires_a_strong_jwt_secret():
+    from src.config import DEVELOPMENT_JWT_SECRET, Settings
+
+    with pytest.raises(ValidationError):
+        Settings(
+            DATABASE_URL="sqlite+aiosqlite:///:memory:",
+            ENVIRONMENT="production",
+            JWT_SECRET="too-short",
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            DATABASE_URL="sqlite+aiosqlite:///:memory:",
+            ENVIRONMENT="production",
+            JWT_SECRET=DEVELOPMENT_JWT_SECRET,
+            _env_file=None,
+        )
 
 
 def _disable_email(monkeypatch):
