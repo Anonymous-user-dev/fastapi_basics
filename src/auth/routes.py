@@ -7,7 +7,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.celery_tasks import send_email
+from src.celery_tasks import queue_email
 from src.config import settings
 from src.db.main import get_session
 from src.db.models import User
@@ -62,7 +62,11 @@ REFRESH_TOKEN_EXPIRY = 2
 
 @auth_router.post("/send_mail", dependencies=[Depends(admin_role_checker)])
 async def send_mail(emails: EmailModel) -> dict:
-    send_email.delay([str(address) for address in emails.addresses], "Welcome to our app", "<h1>Welcome to the app</h1>")
+    queue_email(
+        [str(address) for address in emails.addresses],
+        "Welcome to our app",
+        "<h1>Welcome to the app</h1>",
+    )
     return {"message": "Email sent successfully"}
 
 
@@ -78,7 +82,7 @@ async def create_user_account(
     new_user = await user_service.create_user(user_data, session)
     token = create_verification_token({"email": str(user_data.email)})
     link = f"http://{settings.DOMAIN}/api/v1/auth/verify/{token}"
-    send_email.delay(
+    queue_email(
         [str(user_data.email)],
         "Verify Your email",
         f'<h1>Verify your Email</h1><p>Please click this <a href="{link}">link</a> to verify your email</p>',
@@ -168,7 +172,7 @@ async def revoke_token(token_details: AccessTokenDep) -> JSONResponse:
 async def password_reset_request(email_data: PasswordResetRequestModel) -> JSONResponse:
     token = create_password_reset_token({"email": str(email_data.email)})
     link = f"http://{settings.DOMAIN}/api/v1/auth/password-reset-confirm/{token}"
-    send_email.delay(
+    queue_email(
         [str(email_data.email)],
         "Reset Your Password",
         f'<h1>Reset Your Password</h1><p>Please click this <a href="{link}">link</a> to reset your password</p>',

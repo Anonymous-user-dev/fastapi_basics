@@ -29,7 +29,7 @@ def _book_payload(title="Test Book"):
 
 
 def _headers_for_new_user(test_client, session_factory, monkeypatch, *, role="user"):
-    from src.auth import routes
+    from src import celery_tasks
 
     user_data = {
         "first_name": "Jane",
@@ -38,7 +38,7 @@ def _headers_for_new_user(test_client, session_factory, monkeypatch, *, role="us
         "email": "jane@example.com",
         "password": "testpass123",
     }
-    monkeypatch.setattr(routes.send_email, "delay", lambda *args, **kwargs: None)
+    monkeypatch.setattr(celery_tasks.send_email, "delay", lambda *args, **kwargs: None)
     assert test_client.post("/api/v1/auth/signup", json=user_data).status_code == 201
 
     async def activate_user():
@@ -284,7 +284,7 @@ def test_review_rating_is_bounded(test_client, authenticated_headers):
 def test_another_user_cannot_delete_review(
     test_client, authenticated_headers, session_factory, monkeypatch
 ):
-    from src.auth import routes
+    from src import celery_tasks
 
     book_uid = test_client.post(
         BOOKS_PREFIX + "/", json=_book_payload("Reviewed Book"), headers=authenticated_headers
@@ -301,7 +301,7 @@ def test_another_user_cannot_delete_review(
         "email": "jane@example.com",
         "password": "testpass123",
     }
-    monkeypatch.setattr(routes.send_email, "delay", lambda *args, **kwargs: None)
+    monkeypatch.setattr(celery_tasks.send_email, "delay", lambda *args, **kwargs: None)
     assert test_client.post("/api/v1/auth/signup", json=second_user).status_code == 201
 
     async def verify_second_user():

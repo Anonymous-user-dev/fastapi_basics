@@ -73,10 +73,10 @@ def signup_payload():
 def authenticated_headers(test_client, session_factory, signup_payload, monkeypatch):
     from sqlalchemy import select
 
-    from src.auth import routes
+    from src import celery_tasks
     from src.db.models import User
 
-    monkeypatch.setattr(routes.send_email, "delay", lambda *args, **kwargs: None)
+    monkeypatch.setattr(celery_tasks.send_email, "delay", lambda *args, **kwargs: None)
     response = test_client.post("/api/v1/auth/signup", json=signup_payload)
     assert response.status_code == 201
 

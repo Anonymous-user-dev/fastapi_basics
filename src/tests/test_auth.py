@@ -8,9 +8,9 @@ AUTH_PREFIX = "/api/v1/auth"
 
 
 def _disable_email(monkeypatch):
-    from src.auth import routes
+    from src import celery_tasks
 
-    monkeypatch.setattr(routes.send_email, "delay", lambda *args, **kwargs: None)
+    monkeypatch.setattr(celery_tasks.send_email, "delay", lambda *args, **kwargs: None)
 
 
 def _set_verified(session_factory, email: str):
@@ -71,6 +71,29 @@ def test_signup_rejects_duplicate_username(test_client, signup_payload, monkeypa
 
     assert response.status_code == 403
     assert response.json()["error_code"] == "user_exists"
+
+
+def test_signup_succeeds_when_email_queue_is_unavailable(
+    test_client, session_factory, signup_payload, monkeypatch
+):
+    from src import celery_tasks
+
+    def unavailable_queue(*args, **kwargs):
+        raise ConnectionError("message broker unavailable")
+
+    monkeypatch.setattr(celery_tasks.send_email, "delay", unavailable_queue)
+
+    response = test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
+
+    assert response.status_code == 201
+
+    async def load_user():
+        async with session_factory() as session:
+            return await session.scalar(
+                select(User).where(User.email == signup_payload["email"])
+            )
+
+    assert asyncio.run(load_user()) is not None
 
 
 def test_login_returns_access_and_refresh_tokens(test_client, signup_payload, monkeypatch):
