@@ -42,6 +42,7 @@ from .utils import (
 auth_router = APIRouter()
 user_service = UserService()
 role_checker = RoleChecker(["admin", "user"])
+admin_role_checker = RoleChecker(["admin"])
 access_token_bearer = AccessTokenBearer()
 refresh_token_bearer = RefreshTokenBearer()
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -52,7 +53,7 @@ RoleDep = Annotated[bool, Depends(role_checker)]
 REFRESH_TOKEN_EXPIRY = 2
 
 
-@auth_router.post("/send_mail")
+@auth_router.post("/send_mail", dependencies=[Depends(admin_role_checker)])
 async def send_mail(emails: EmailModel) -> dict:
     send_email.delay([str(address) for address in emails.addresses], "Welcome to our app", "<h1>Welcome to the app</h1>")
     return {"message": "Email sent successfully"}
