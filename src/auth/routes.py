@@ -31,8 +31,10 @@ from .schemas import (
 from .service import UserService
 from .utils import (
     create_access_token,
-    create_url_safe_token,
-    decode_url_safe_token,
+    create_password_reset_token,
+    create_verification_token,
+    decode_password_reset_token,
+    decode_verification_token,
     generate_passwd_hash,
     verify_password,
 )
@@ -66,7 +68,7 @@ async def create_user_account(
     ) or await user_service.get_user_by_username(user_data.username, session):
         raise UserAlreadyExists()
     new_user = await user_service.create_user(user_data, session)
-    token = create_url_safe_token({"email": str(user_data.email)})
+    token = create_verification_token({"email": str(user_data.email)})
     link = f"http://{settings.DOMAIN}/api/v1/auth/verify/{token}"
     send_email.delay(
         [str(user_data.email)],
@@ -78,7 +80,7 @@ async def create_user_account(
 
 @auth_router.get("/verify/{token}")
 async def verify_user_account(token: str, session: SessionDep) -> JSONResponse:
-    token_data = decode_url_safe_token(token)
+    token_data = decode_verification_token(token)
     if not token_data or not token_data.get("email"):
         raise InvalidToken()
     user = await user_service.get_user_by_email(token_data["email"], session)
@@ -134,7 +136,7 @@ async def revoke_token(token_details: AccessTokenDep) -> JSONResponse:
 
 @auth_router.post("/password-reset-request")
 async def password_reset_request(email_data: PasswordResetRequestModel) -> JSONResponse:
-    token = create_url_safe_token({"email": str(email_data.email)})
+    token = create_password_reset_token({"email": str(email_data.email)})
     link = f"http://{settings.DOMAIN}/api/v1/auth/password-reset-confirm/{token}"
     send_email.delay(
         [str(email_data.email)],
@@ -152,7 +154,7 @@ async def reset_account_password(
 ) -> JSONResponse:
     if passwords.new_password != passwords.confirm_new_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
-    token_data = decode_url_safe_token(token)
+    token_data = decode_password_reset_token(token)
     if not token_data or not token_data.get("email"):
         raise InvalidToken()
     user = await user_service.get_user_by_email(token_data["email"], session)

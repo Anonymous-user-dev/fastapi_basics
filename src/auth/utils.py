@@ -12,9 +12,13 @@ ACCESS_TOKEN_EXPIRY = 3600
 URL_TOKEN_EXPIRY = 3600
 logger = logging.getLogger(__name__)
 password_hash = PasswordHash.recommended()
-serializer = URLSafeTimedSerializer(
+verification_serializer = URLSafeTimedSerializer(
     secret_key=settings.JWT_SECRET,
-    salt="email-configuration",
+    salt="email-verification",
+)
+password_reset_serializer = URLSafeTimedSerializer(
+    secret_key=settings.JWT_SECRET,
+    salt="password-reset",
 )
 
 
@@ -49,13 +53,29 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
-def create_url_safe_token(data: dict) -> str:
-    return serializer.dumps(data)
+def create_verification_token(data: dict) -> str:
+    return verification_serializer.dumps(data)
 
 
-def decode_url_safe_token(token: str, max_age: int = URL_TOKEN_EXPIRY) -> dict | None:
+def decode_verification_token(token: str, max_age: int = URL_TOKEN_EXPIRY) -> dict | None:
+    return _decode_url_token(verification_serializer, token, max_age)
+
+
+def create_password_reset_token(data: dict) -> str:
+    return password_reset_serializer.dumps(data)
+
+
+def decode_password_reset_token(token: str, max_age: int = URL_TOKEN_EXPIRY) -> dict | None:
+    return _decode_url_token(password_reset_serializer, token, max_age)
+
+
+def _decode_url_token(
+    token_serializer: URLSafeTimedSerializer,
+    token: str,
+    max_age: int,
+) -> dict | None:
     try:
-        return serializer.loads(token, max_age=max_age)
+        return token_serializer.loads(token, max_age=max_age)
     except (BadSignature, SignatureExpired):
         logger.info("Rejected invalid or expired URL token")
         return None

@@ -101,11 +101,11 @@ def test_login_rejects_wrong_password(test_client, signup_payload, monkeypatch):
 
 
 def test_verification_token_marks_account_verified(test_client, session_factory, signup_payload, monkeypatch):
-    from src.auth.utils import create_url_safe_token
+    from src.auth.utils import create_verification_token
 
     _disable_email(monkeypatch)
     test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
-    token = create_url_safe_token({"email": signup_payload["email"]})
+    token = create_verification_token({"email": signup_payload["email"]})
 
     response = test_client.get(f"{AUTH_PREFIX}/verify/{token}")
 
@@ -155,11 +155,11 @@ def test_refresh_endpoint_rejects_access_token_and_accepts_refresh_token(
 
 
 def test_password_reset_changes_login_password(test_client, signup_payload, monkeypatch):
-    from src.auth.utils import create_url_safe_token
+    from src.auth.utils import create_password_reset_token
 
     _disable_email(monkeypatch)
     test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
-    token = create_url_safe_token({"email": signup_payload["email"]})
+    token = create_password_reset_token({"email": signup_payload["email"]})
 
     response = test_client.post(
         f"{AUTH_PREFIX}/password-reset-confirm/{token}",
@@ -172,6 +172,35 @@ def test_password_reset_changes_login_password(test_client, signup_payload, monk
         json={"email": signup_payload["email"], "password": "new-password"},
     )
     assert login.status_code == 200
+
+
+def test_verification_token_cannot_reset_password(test_client, signup_payload, monkeypatch):
+    from src.auth.utils import create_verification_token
+
+    _disable_email(monkeypatch)
+    test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
+    token = create_verification_token({"email": signup_payload["email"]})
+
+    response = test_client.post(
+        f"{AUTH_PREFIX}/password-reset-confirm/{token}",
+        json={"new_password": "new-password", "confirm_new_password": "new-password"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "invalid_token"
+
+
+def test_password_reset_token_cannot_verify_account(test_client, signup_payload, monkeypatch):
+    from src.auth.utils import create_password_reset_token
+
+    _disable_email(monkeypatch)
+    test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
+    token = create_password_reset_token({"email": signup_payload["email"]})
+
+    response = test_client.get(f"{AUTH_PREFIX}/verify/{token}")
+
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "invalid_token"
 
 
 def test_logout_revokes_access_token(test_client, session_factory, signup_payload, monkeypatch):
