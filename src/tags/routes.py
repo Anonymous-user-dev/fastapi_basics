@@ -4,9 +4,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.dependencies import RoleChecker
+from src.auth.dependencies import RoleChecker, get_current_user
 from src.books.schemas import BookDetailModel
 from src.db.main import get_session
+from src.db.models import User
 
 from .schemas import TagAddModel, TagCreateModel, TagModel
 from .service import TagService
@@ -15,6 +16,7 @@ tags_router = APIRouter()
 tag_service = TagService()
 role_checker = RoleChecker(["user", "admin"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
 PageLimit = Annotated[int, Query(ge=1, le=100)]
 PageOffset = Annotated[int, Query(ge=0)]
 
@@ -47,8 +49,14 @@ async def add_tags_to_book(
     book_uid: uuid.UUID,
     tag_data: TagAddModel,
     session: SessionDep,
+    current_user: CurrentUserDep,
 ) -> BookDetailModel:
-    return await tag_service.add_tags_to_book(book_uid, tag_data, session)
+    return await tag_service.add_tags_to_book(
+        book_uid,
+        tag_data,
+        current_user,
+        session,
+    )
 
 
 @tags_router.put(

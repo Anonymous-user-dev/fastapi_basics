@@ -289,6 +289,30 @@ def test_repeated_tag_in_one_request_is_added_once(test_client, authenticated_he
     assert [tag["name"] for tag in response.json()["tags"]] == ["fiction"]
 
 
+def test_another_user_cannot_add_tags_to_a_book(
+    test_client, authenticated_headers, session_factory, monkeypatch
+):
+    book_uid = test_client.post(
+        BOOKS_PREFIX + "/",
+        json=_book_payload("Owner's Book"),
+        headers=authenticated_headers,
+    ).json()["uid"]
+    other_user_headers = _headers_for_new_user(
+        test_client, session_factory, monkeypatch
+    )
+
+    response = test_client.post(
+        f"{TAGS_PREFIX}/book/{book_uid}/tags",
+        json={"tags": [{"name": "unauthorized"}]},
+        headers=other_user_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "insufficient_permissions"
+    detail = test_client.get(f"{BOOKS_PREFIX}/{book_uid}", headers=authenticated_headers)
+    assert detail.json()["tags"] == []
+
+
 def test_add_and_get_five_star_review(test_client, authenticated_headers):
     book_uid = test_client.post(
         BOOKS_PREFIX + "/", json=_book_payload("Reviewed Book"), headers=authenticated_headers

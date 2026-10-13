@@ -4,8 +4,13 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.books.service import BookService
-from src.db.models import Book, Tag
-from src.errors import BookNotFound, TagAlreadyExists, TagNotFound
+from src.db.models import Book, Tag, User
+from src.errors import (
+    BookNotFound,
+    InsufficientPermission,
+    TagAlreadyExists,
+    TagNotFound,
+)
 
 from .schemas import TagAddModel, TagCreateModel
 
@@ -44,11 +49,14 @@ class TagService:
         self,
         book_uid: uuid.UUID,
         tag_data: TagAddModel,
+        user: User,
         session: AsyncSession,
     ) -> Book:
         book = await book_service.get_book(book_uid, session)
         if book is None:
             raise BookNotFound()
+        if book.user_uid != user.uid and user.role != "admin":
+            raise InsufficientPermission()
         for tag_item in tag_data.tags:
             tag = await self.get_tag_by_name(tag_item.name, session)
             if tag is None:
