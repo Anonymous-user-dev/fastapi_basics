@@ -1,12 +1,11 @@
 import uuid
 
-from fastapi import HTTPException, status
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.books.service import BookService
 from src.db.models import Review, User
-from src.errors import BookNotFound, ReviewNotFound
+from src.errors import BookNotFound, InsufficientPermission, ReviewNotFound
 
 from .schemas import ReviewCreateModel
 
@@ -60,10 +59,7 @@ class ReviewService:
         session: AsyncSession,
     ) -> None:
         review = await self.get_review_or_404(review_uid, session)
-        if review.user_uid != user.uid:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot delete this review",
-            )
+        if review.user_uid != user.uid and user.role != "admin":
+            raise InsufficientPermission()
         await session.delete(review)
         await session.commit()

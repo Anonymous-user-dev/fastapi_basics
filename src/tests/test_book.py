@@ -359,6 +359,34 @@ def test_another_user_cannot_delete_review(
     assert response.status_code == 403
 
 
+def test_admin_can_delete_another_users_review(
+    test_client, authenticated_headers, session_factory, monkeypatch
+):
+    book_uid = test_client.post(
+        BOOKS_PREFIX + "/",
+        json=_book_payload("Reviewed Book"),
+        headers=authenticated_headers,
+    ).json()["uid"]
+    review_uid = test_client.post(
+        f"{REVIEWS_PREFIX}/book/{book_uid}",
+        json={"rating": 4, "review_text": "Good"},
+        headers=authenticated_headers,
+    ).json()["uid"]
+    admin_headers = _headers_for_new_user(
+        test_client, session_factory, monkeypatch, role="admin"
+    )
+
+    response = test_client.delete(
+        f"{REVIEWS_PREFIX}/{review_uid}", headers=admin_headers
+    )
+
+    assert response.status_code == 204
+    missing = test_client.get(
+        f"{REVIEWS_PREFIX}/{review_uid}", headers=admin_headers
+    )
+    assert missing.status_code == 404
+
+
 def test_application_infrastructure(test_client):
     assert app.openapi_url == "/api/v1/openapi.json"
     assert c_app.conf.broker_url == settings.REDIS_URL
