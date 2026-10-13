@@ -9,6 +9,13 @@ _memory_blocklist: set[str] = set()
 _memory_session_blocklist: set[str] = set()
 _memory_rate_limits: dict[str, tuple[int, float]] = {}
 token_blocklist = None if settings.REDIS_URL.startswith("memory://") else redis.from_url(settings.REDIS_URL)
+RATE_LIMIT_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
 
 
 async def add_jti_to_blocklist(jti: str, expires_in: int = JTI_EXPIRY) -> None:
@@ -69,8 +76,10 @@ async def rate_limit_allows(key: str, limit: int, window_seconds: int) -> bool:
         return count <= limit
 
     redis_key = f"rate:{key}"
-    async with token_blocklist.pipeline(transaction=True) as pipeline:
-        pipeline.incr(redis_key)
-        pipeline.expire(redis_key, window_seconds, nx=True)
-        count, _ = await pipeline.execute()
+    count = await token_blocklist.eval(
+        RATE_LIMIT_SCRIPT,
+        1,
+        redis_key,
+        window_seconds,
+    )
     return count <= limit

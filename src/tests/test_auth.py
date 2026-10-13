@@ -192,6 +192,31 @@ def test_login_rate_limit_blocks_repeated_attempts(test_client, signup_payload, 
     assert responses[5].json()["error_code"] == "rate_limit_exceeded"
 
 
+def test_rate_limiter_uses_commands_supported_by_redis_6(monkeypatch):
+    from src.db import redis
+
+    class RedisSixCompatibleClient:
+        def __init__(self):
+            self.count = 0
+
+        async def eval(self, script, number_of_keys, key, window_seconds):
+            assert number_of_keys == 1
+            assert key == "rate:login:client"
+            assert window_seconds == 60
+            self.count += 1
+            return self.count
+
+    redis_client = RedisSixCompatibleClient()
+    monkeypatch.setattr(redis, "token_blocklist", redis_client)
+
+    results = [
+        asyncio.run(redis.rate_limit_allows("login:client", limit=2, window_seconds=60))
+        for _ in range(3)
+    ]
+
+    assert results == [True, True, False]
+
+
 def test_verification_token_marks_account_verified(test_client, session_factory, signup_payload, monkeypatch):
     from src.auth.utils import create_verification_token
 
