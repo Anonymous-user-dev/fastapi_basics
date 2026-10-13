@@ -299,6 +299,33 @@ def test_password_reset_changes_login_password(test_client, signup_payload, monk
     assert login.status_code == 200
 
 
+def test_password_reset_token_cannot_be_reused(test_client, signup_payload, monkeypatch):
+    from src.auth.utils import create_password_reset_token
+
+    _disable_email(monkeypatch)
+    test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
+    token = create_password_reset_token({"email": signup_payload["email"]})
+    first_reset = {
+        "new_password": "first-password",
+        "confirm_new_password": "first-password",
+    }
+    second_reset = {
+        "new_password": "second-password",
+        "confirm_new_password": "second-password",
+    }
+
+    first_response = test_client.post(
+        f"{AUTH_PREFIX}/password-reset-confirm/{token}", json=first_reset
+    )
+    second_response = test_client.post(
+        f"{AUTH_PREFIX}/password-reset-confirm/{token}", json=second_reset
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 401
+    assert second_response.json()["error_code"] == "token_revoked"
+
+
 def test_verification_token_cannot_reset_password(test_client, signup_payload, monkeypatch):
     from src.auth.utils import create_verification_token
 

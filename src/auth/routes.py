@@ -11,7 +11,7 @@ from src.celery_tasks import queue_email
 from src.config import settings
 from src.db.main import get_session
 from src.db.models import User
-from src.db.redis import add_jti_to_blocklist, consume_refresh_token, revoke_session
+from src.db.redis import add_jti_to_blocklist, consume_token, revoke_session
 from src.errors import (
     InvalidCredentials,
     InvalidToken,
@@ -38,6 +38,7 @@ from .schemas import (
 )
 from .service import UserService
 from .utils import (
+    URL_TOKEN_EXPIRY,
     create_access_token,
     create_password_reset_token,
     create_verification_token,
@@ -149,7 +150,7 @@ async def get_new_access_token(token_details: RefreshTokenDep) -> JSONResponse:
         int(token_details["exp"] - datetime.now(timezone.utc).timestamp()),
         1,
     )
-    if not await consume_refresh_token(token_details["jti"], expires_in):
+    if not await consume_token(token_details["jti"], expires_in):
         raise RevokedToken()
     session_id = token_details["sid"]
     access_token = create_access_token(token_details["user"], session_id=session_id)
@@ -207,8 +208,10 @@ async def reset_account_password(
     if passwords.new_password != passwords.confirm_new_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
     token_data = decode_password_reset_token(token)
-    if not token_data or not token_data.get("email"):
+    if not token_data or not token_data.get("email") or not token_data.get("jti"):
         raise InvalidToken()
+    if not await consume_token(token_data["jti"], URL_TOKEN_EXPIRY):
+        raise RevokedToken()
     user = await user_service.get_user_by_email(token_data["email"], session)
     if user is None:
         raise UserNotFound()

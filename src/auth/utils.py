@@ -64,7 +64,7 @@ def decode_verification_token(token: str, max_age: int = URL_TOKEN_EXPIRY) -> di
 
 
 def create_password_reset_token(data: dict) -> str:
-    return password_reset_serializer.dumps(data)
+    return password_reset_serializer.dumps({**data, "jti": str(uuid.uuid4())})
 
 
 def decode_password_reset_token(token: str, max_age: int = URL_TOKEN_EXPIRY) -> dict | None:

@@ -31,8 +31,8 @@ async def token_in_blocklist(jti: str) -> bool:
     return await token_blocklist.get(f"token:{jti}") is not None
 
 
-async def consume_refresh_token(jti: str, expires_in: int) -> bool:
-    """Mark a refresh token as used and report whether it was still unused."""
+async def consume_token(jti: str, expires_in: int) -> bool:
+    """Mark a one-time token as used and report whether it was still unused."""
     if token_blocklist is None:
         if jti in _memory_blocklist:
             return False
