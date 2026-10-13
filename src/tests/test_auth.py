@@ -440,3 +440,44 @@ def test_admin_can_use_manual_mail_endpoint(
     )
 
     assert response.status_code == 200
+
+
+def test_admin_is_told_when_manual_mail_cannot_be_queued(
+    test_client, session_factory, signup_payload, monkeypatch
+):
+    from src import celery_tasks
+
+    _disable_email(monkeypatch)
+    test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
+
+    async def promote_user():
+        async with session_factory() as session:
+            user = await session.scalar(
+                select(User).where(User.email == signup_payload["email"])
+            )
+            user.is_verified = True
+            user.role = "admin"
+            await session.commit()
+
+    asyncio.run(promote_user())
+    login = test_client.post(
+        f"{AUTH_PREFIX}/login",
+        json={
+            "email": signup_payload["email"],
+            "password": signup_payload["password"],
+        },
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    def unavailable_queue(*args, **kwargs):
+        raise ConnectionError("message broker unavailable")
+
+    monkeypatch.setattr(celery_tasks.send_email, "delay", unavailable_queue)
+    response = test_client.post(
+        f"{AUTH_PREFIX}/send_mail",
+        json={"addresses": ["reader@example.com"]},
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error_code"] == "email_queue_unavailable"

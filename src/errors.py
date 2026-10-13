@@ -67,6 +67,10 @@ class RateLimitExceeded(BooklyException):
     pass
 
 
+class EmailQueueUnavailable(BooklyException):
+    pass
+
+
 def create_exception_handler(
     status_code: int, initial_detail: Any
 ) -> Callable[[Request, Exception], JSONResponse]:
@@ -92,6 +96,11 @@ def register_all_errors(app: FastAPI) -> None:
         InsufficientPermission: (403, "Insufficient permissions", "insufficient_permissions"),
         AccountNotVerified: (403, "Account not verified", "account_not_verified"),
         RateLimitExceeded: (429, "Too many requests", "rate_limit_exceeded"),
+        EmailQueueUnavailable: (
+            503,
+            "Email service is temporarily unavailable",
+            "email_queue_unavailable",
+        ),
     }
     for exception, (status_code, message, error_code) in handlers.items():
         app.add_exception_handler(

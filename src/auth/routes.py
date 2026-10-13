@@ -13,6 +13,7 @@ from src.db.main import get_session
 from src.db.models import User
 from src.db.redis import add_jti_to_blocklist, consume_token, revoke_session
 from src.errors import (
+    EmailQueueUnavailable,
     InvalidCredentials,
     InvalidToken,
     RevokedToken,
@@ -71,11 +72,13 @@ REFRESH_TOKEN_EXPIRY = 2
     dependencies=[Depends(admin_role_checker), Depends(email_rate_limiter)],
 )
 async def send_mail(emails: EmailModel) -> dict:
-    queue_email(
+    queued = queue_email(
         [str(address) for address in emails.addresses],
         "Welcome to our app",
         "<h1>Welcome to the app</h1>",
     )
+    if not queued:
+        raise EmailQueueUnavailable()
     return {"message": "Email sent successfully"}
 
 
