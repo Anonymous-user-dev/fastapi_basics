@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Book(BaseModel):
@@ -59,3 +59,14 @@ class BookUpdateModel(BaseModel):
     published_date: date | None = None
     page_count: int | None = Field(default=None, gt=0)
     language: str | None = Field(default=None, min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def reject_explicit_nulls(self):
+        null_fields = [
+            field_name
+            for field_name in self.model_fields_set
+            if getattr(self, field_name) is None
+        ]
+        if null_fields:
+            raise ValueError("Book fields cannot be null")
+        return self

@@ -136,6 +136,20 @@ def test_patch_updates_only_supplied_book_fields(test_client, authenticated_head
     assert response.json()["author"] == "Test Author"
 
 
+def test_patch_rejects_null_for_required_book_fields(test_client, authenticated_headers):
+    created = test_client.post(
+        BOOKS_PREFIX + "/", json=_book_payload(), headers=authenticated_headers
+    ).json()
+
+    response = test_client.patch(
+        f"{BOOKS_PREFIX}/{created['uid']}",
+        json={"title": None},
+        headers=authenticated_headers,
+    )
+
+    assert response.status_code == 422
+
+
 def test_delete_book_removes_it(test_client, authenticated_headers):
     uid = test_client.post(
         BOOKS_PREFIX + "/", json=_book_payload(), headers=authenticated_headers
