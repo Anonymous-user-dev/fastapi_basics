@@ -1,6 +1,8 @@
 import asyncio
+import uuid
 from pathlib import Path
 
+import pytest
 import yaml
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -311,6 +313,36 @@ def test_another_user_cannot_add_tags_to_a_book(
     assert response.json()["error_code"] == "insufficient_permissions"
     detail = test_client.get(f"{BOOKS_PREFIX}/{book_uid}", headers=authenticated_headers)
     assert detail.json()["tags"] == []
+
+
+def test_invalid_role_cannot_manage_an_owned_book(
+    test_client, authenticated_headers, session_factory
+):
+    from src.errors import InsufficientPermission
+    from src.tags.schemas import TagAddModel
+    from src.tags.service import TagService
+
+    book_uid = test_client.post(
+        BOOKS_PREFIX + "/",
+        json=_book_payload("Role Protected Book"),
+        headers=authenticated_headers,
+    ).json()["uid"]
+
+    async def add_tag_with_invalid_role():
+        async with session_factory() as session:
+            user = await session.scalar(select(User).where(User.email == "john@example.com"))
+            user.role = "editor"
+            await session.commit()
+
+            with pytest.raises(InsufficientPermission):
+                await TagService().add_tags_to_book(
+                    uuid.UUID(book_uid),
+                    TagAddModel(tags=[{"name": "security"}]),
+                    user,
+                    session,
+                )
+
+    asyncio.run(add_tag_with_invalid_role())
 
 
 def test_add_and_get_five_star_review(test_client, authenticated_headers):

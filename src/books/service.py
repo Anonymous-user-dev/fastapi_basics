@@ -3,9 +3,18 @@ import uuid
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Book
+from src.db.models import Book, User
+from src.errors import InsufficientPermission
 
 from .schemas import BookCreateModel, BookUpdateModel
+
+
+def ensure_user_can_manage_book(user: User, book: Book) -> None:
+    if user.role == "admin":
+        return
+    if user.role == "user" and book.user_uid == user.uid:
+        return
+    raise InsufficientPermission()
 
 
 class BookService:

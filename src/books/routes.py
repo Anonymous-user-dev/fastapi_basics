@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.dependencies import RoleChecker, get_current_user
 from src.db.main import get_session
 from src.db.models import User
-from src.errors import BookNotFound, InsufficientPermission
+from src.errors import BookNotFound
 
 from .schemas import Book, BookCreateModel, BookDetailModel, BookUpdateModel
-from .service import BookService
+from .service import BookService, ensure_user_can_manage_book
 
 book_router = APIRouter()
 book_service = BookService()
@@ -84,8 +84,7 @@ async def update_book(
     book = await book_service.get_book(book_uid, session)
     if book is None:
         raise BookNotFound()
-    if current_user.role != "admin" and book.user_uid != current_user.uid:
-        raise InsufficientPermission()
+    ensure_user_can_manage_book(current_user, book)
     return await book_service.update_book(book, book_update_data, session)
 
 
@@ -102,7 +101,6 @@ async def delete_book(
     book = await book_service.get_book(book_uid, session)
     if book is None:
         raise BookNotFound()
-    if current_user.role != "admin" and book.user_uid != current_user.uid:
-        raise InsufficientPermission()
+    ensure_user_can_manage_book(current_user, book)
     await book_service.delete_book(book, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

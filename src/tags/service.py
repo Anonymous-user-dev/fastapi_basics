@@ -3,14 +3,9 @@ import uuid
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.books.service import BookService
+from src.books.service import BookService, ensure_user_can_manage_book
 from src.db.models import Book, Tag, User
-from src.errors import (
-    BookNotFound,
-    InsufficientPermission,
-    TagAlreadyExists,
-    TagNotFound,
-)
+from src.errors import BookNotFound, TagAlreadyExists, TagNotFound
 
 from .schemas import TagAddModel, TagCreateModel
 
@@ -55,8 +50,7 @@ class TagService:
         book = await book_service.get_book(book_uid, session)
         if book is None:
             raise BookNotFound()
-        if book.user_uid != user.uid and user.role != "admin":
-            raise InsufficientPermission()
+        ensure_user_can_manage_book(user, book)
         for tag_item in tag_data.tags:
             tag = await self.get_tag_by_name(tag_item.name, session)
             if tag is None:
