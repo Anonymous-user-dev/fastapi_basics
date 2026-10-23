@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import RoleChecker, get_current_user
@@ -19,6 +19,10 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 PageLimit = Annotated[int, Query(ge=1, le=100)]
 PageOffset = Annotated[int, Query(ge=0)]
+IdempotencyKey = Annotated[
+    str | None,
+    Header(alias="Idempotency-Key", min_length=1, max_length=255),
+]
 
 
 @book_router.get("/", response_model=list[Book], dependencies=[Depends(role_checker)])
@@ -54,8 +58,18 @@ async def create_a_book(
     book_data: BookCreateModel,
     session: SessionDep,
     current_user: CurrentUserDep,
+    response: Response,
+    idempotency_key: IdempotencyKey = None,
 ) -> Book:
-    return await book_service.create_book(book_data, current_user.uid, session)
+    book, replayed = await book_service.create_book(
+        book_data,
+        current_user.uid,
+        session,
+        idempotency_key=idempotency_key,
+    )
+    if replayed:
+        response.headers["Idempotent-Replayed"] = "true"
+    return book
 
 
 @book_router.get(

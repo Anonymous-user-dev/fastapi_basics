@@ -6,13 +6,14 @@ import pytest
 import yaml
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import DeclarativeBase
 
 from src import app
 from src.celery_tasks import c_app
 from src.config import settings
 from src.db.models import Base, User
+from src.db.models import Book as BookModel
 
 BOOKS_PREFIX = "/api/v1/books"
 TAGS_PREFIX = "/api/v1/tags"
@@ -68,6 +69,49 @@ def test_create_and_list_books(test_client, authenticated_headers):
     response = test_client.get(BOOKS_PREFIX + "/", headers=authenticated_headers)
     assert response.status_code == 200
     assert [book["title"] for book in response.json()] == ["Test Book"]
+
+
+def test_book_creation_replays_the_result_for_the_same_idempotency_key(
+    test_client,
+    authenticated_headers,
+    session_factory,
+):
+    headers = {**authenticated_headers, "Idempotency-Key": "create-book-123"}
+
+    first = test_client.post(BOOKS_PREFIX + "/", json=_book_payload(), headers=headers)
+    replay = test_client.post(BOOKS_PREFIX + "/", json=_book_payload(), headers=headers)
+
+    assert first.status_code == 201
+    assert replay.status_code == 201
+    assert replay.json() == first.json()
+    assert replay.headers["Idempotent-Replayed"] == "true"
+
+    async def count_books():
+        async with session_factory() as session:
+            return await session.scalar(select(func.count()).select_from(BookModel))
+
+    assert asyncio.run(count_books()) == 1
+
+
+def test_book_creation_rejects_key_reuse_with_different_payload(
+    test_client,
+    authenticated_headers,
+):
+    headers = {**authenticated_headers, "Idempotency-Key": "create-book-123"}
+    assert test_client.post(
+        BOOKS_PREFIX + "/",
+        json=_book_payload("First request"),
+        headers=headers,
+    ).status_code == 201
+
+    conflict = test_client.post(
+        BOOKS_PREFIX + "/",
+        json=_book_payload("Changed request"),
+        headers=headers,
+    )
+
+    assert conflict.status_code == 409
+    assert conflict.json()["error_code"] == "idempotency_key_conflict"
 
 
 def test_book_list_supports_bounded_pagination(test_client, authenticated_headers):
@@ -234,6 +278,7 @@ def test_models_use_sqlalchemy_declarative_base():
         "tags",
         "book_tags",
         "outbox_events",
+        "idempotency_records",
     }
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -506,8 +551,9 @@ def test_mail_message_is_html():
 def test_migration_history_has_one_linear_head():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
     revisions = list(scripts.walk_revisions())
-    assert scripts.get_heads() == ["6f47c8e912ab"]
+    assert scripts.get_heads() == ["9c3a74e5b821"]
     assert [revision.revision for revision in revisions] == [
+        "9c3a74e5b821",
         "6f47c8e912ab",
         "a04d79012711",
         "dba4f311e944",

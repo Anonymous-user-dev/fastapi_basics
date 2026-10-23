@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     Uuid,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -83,6 +84,33 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User {self.username}>"
+
+
+class IdempotencyRecord(Base):
+    __tablename__ = "idempotency_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_uid",
+            "operation",
+            "key",
+            name="uq_idempotency_records_user_operation_key",
+        ),
+    )
+
+    uid: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_uid: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.uid", ondelete="CASCADE"), index=True
+    )
+    operation: Mapped[str] = mapped_column(String(100))
+    key: Mapped[str] = mapped_column(String(255))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    response_payload: Mapped[dict] = mapped_column(JSON)
+    response_status: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
 
 
 class Book(Base):

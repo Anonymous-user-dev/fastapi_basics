@@ -71,6 +71,10 @@ class EmailQueueUnavailable(BooklyException):
     pass
 
 
+class IdempotencyKeyConflict(BooklyException):
+    pass
+
+
 def create_exception_handler(
     status_code: int, initial_detail: Any
 ) -> Callable[[Request, Exception], JSONResponse]:
@@ -100,6 +104,11 @@ def register_all_errors(app: FastAPI) -> None:
             503,
             "Email service is temporarily unavailable",
             "email_queue_unavailable",
+        ),
+        IdempotencyKeyConflict: (
+            409,
+            "Idempotency key was already used for a different request",
+            "idempotency_key_conflict",
         ),
     }
     for exception, (status_code, message, error_code) in handlers.items():

@@ -1,12 +1,27 @@
+import hashlib
+import json
 import uuid
 
 from sqlalchemy import desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Book, User
-from src.errors import InsufficientPermission
+from src.db.models import Book, IdempotencyRecord, User
+from src.errors import IdempotencyKeyConflict, InsufficientPermission
 
+from .schemas import Book as BookSchema
 from .schemas import BookCreateModel, BookUpdateModel
+
+CREATE_BOOK_OPERATION = "books.create"
+
+
+def _request_hash(book_data: BookCreateModel) -> str:
+    canonical_payload = json.dumps(
+        book_data.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical_payload.encode()).hexdigest()
 
 
 def ensure_user_can_manage_book(user: User, book: Book) -> None:
@@ -54,12 +69,75 @@ class BookService:
         book_data: BookCreateModel,
         user_uid: uuid.UUID,
         session: AsyncSession,
-    ) -> Book:
+        *,
+        idempotency_key: str | None = None,
+    ) -> tuple[Book | BookSchema, bool]:
+        request_hash = _request_hash(book_data)
+        if idempotency_key is not None:
+            existing = await self._get_idempotency_record(
+                session,
+                user_uid,
+                idempotency_key,
+            )
+            if existing is not None:
+                return self._replay_idempotent_response(existing, request_hash)
+
         book = Book(**book_data.model_dump(), user_uid=user_uid)
         session.add(book)
-        await session.commit()
-        await session.refresh(book)
-        return book
+        if idempotency_key is None:
+            await session.commit()
+            await session.refresh(book)
+            return book, False
+
+        await session.flush()
+        response_payload = BookSchema.model_validate(book).model_dump(mode="json")
+        session.add(
+            IdempotencyRecord(
+                user_uid=user_uid,
+                operation=CREATE_BOOK_OPERATION,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response_payload=response_payload,
+                response_status=201,
+            )
+        )
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            existing = await self._get_idempotency_record(
+                session,
+                user_uid,
+                idempotency_key,
+            )
+            if existing is None:
+                raise
+            return self._replay_idempotent_response(existing, request_hash)
+
+        return BookSchema.model_validate(response_payload), False
+
+    async def _get_idempotency_record(
+        self,
+        session: AsyncSession,
+        user_uid: uuid.UUID,
+        key: str,
+    ) -> IdempotencyRecord | None:
+        return await session.scalar(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.user_uid == user_uid,
+                IdempotencyRecord.operation == CREATE_BOOK_OPERATION,
+                IdempotencyRecord.key == key,
+            )
+        )
+
+    def _replay_idempotent_response(
+        self,
+        record: IdempotencyRecord,
+        request_hash: str,
+    ) -> tuple[BookSchema, bool]:
+        if record.request_hash != request_hash:
+            raise IdempotencyKeyConflict()
+        return BookSchema.model_validate(record.response_payload), True
 
     async def update_book(
         self,
