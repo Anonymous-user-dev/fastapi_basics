@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from src.db.models import User
+from src.db.models import OutboxEvent, User
 
 AUTH_PREFIX = "/api/v1/auth"
 
@@ -42,24 +42,67 @@ def test_production_requires_https_public_urls():
         )
 
 
-def test_signup_uses_configured_public_url_in_verification_email(
-    test_client, signup_payload, monkeypatch
+def test_signup_stores_verification_email_in_outbox(
+    test_client, session_factory, signup_payload, monkeypatch
 ):
-    from src import celery_tasks
     from src.auth import routes
 
-    queued_messages = []
-    monkeypatch.setattr(
-        celery_tasks.send_email,
-        "delay",
-        lambda recipients, subject, body: queued_messages.append(body),
-    )
     monkeypatch.setattr(routes.settings, "PUBLIC_BASE_URL", "https://books.example.com")
 
     response = test_client.post(f"{AUTH_PREFIX}/signup", json=signup_payload)
 
     assert response.status_code == 201
-    assert 'href="https://books.example.com/api/v1/auth/verify/' in queued_messages[0]
+
+    async def load_event():
+        async with session_factory() as session:
+            return await session.scalar(select(OutboxEvent))
+
+    event = asyncio.run(load_event())
+    assert event is not None
+    assert event.event_type == "email.send"
+    assert event.status == "pending"
+    assert event.attempts == 0
+    assert event.payload["recipients"] == [signup_payload["email"]]
+    assert event.payload["subject"] == "Verify Your email"
+    assert (
+        'href="https://books.example.com/api/v1/auth/verify/'
+        in event.payload["body"]
+    )
+
+
+def test_user_and_outbox_event_roll_back_together(session_factory, signup_payload):
+    from src.auth.schemas import UserCreateModel
+    from src.auth.service import UserService
+    from src.errors import UserAlreadyExists
+
+    async def create_duplicate_user():
+        service = UserService()
+        user_data = UserCreateModel(**signup_payload)
+
+        async with session_factory() as session:
+            await service.create_user(
+                user_data,
+                session,
+                outbox_events=[
+                    OutboxEvent(event_type="email.send", payload={"attempt": 1})
+                ],
+            )
+
+            with pytest.raises(UserAlreadyExists):
+                await service.create_user(
+                    user_data,
+                    session,
+                    outbox_events=[
+                        OutboxEvent(event_type="email.send", payload={"attempt": 2})
+                    ],
+                )
+
+            return await session.scalar(
+                select(func.count()).select_from(OutboxEvent)
+            )
+
+    assert asyncio.run(create_duplicate_user()) == 1
+
 
 def _disable_email(monkeypatch):
     from src import celery_tasks

@@ -1,8 +1,10 @@
+from collections.abc import Sequence
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import User
+from src.db.models import OutboxEvent, User
 from src.errors import UserAlreadyExists
 
 from .schemas import UserCreateModel
@@ -19,14 +21,20 @@ class UserService:
     async def get_user_by_username(self, username: str, session: AsyncSession) -> User | None:
         return await session.scalar(select(User).where(User.username == username))
 
-    async def create_user(self, user_data: UserCreateModel, session: AsyncSession) -> User:
+    async def create_user(
+        self,
+        user_data: UserCreateModel,
+        session: AsyncSession,
+        *,
+        outbox_events: Sequence[OutboxEvent] = (),
+    ) -> User:
         values = user_data.model_dump(exclude={"password"})
         user = User(
             **values,
             password_hash=generate_passwd_hash(user_data.password),
             role="user",
         )
-        session.add(user)
+        session.add_all([user, *outbox_events])
         try:
             await session.commit()
         except IntegrityError as error:

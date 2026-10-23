@@ -227,7 +227,14 @@ def test_books_require_authentication(test_client):
 
 def test_models_use_sqlalchemy_declarative_base():
     assert issubclass(Base, DeclarativeBase)
-    assert set(Base.metadata.tables) == {"users", "books", "reviews", "tags", "book_tags"}
+    assert set(Base.metadata.tables) == {
+        "users",
+        "books",
+        "reviews",
+        "tags",
+        "book_tags",
+        "outbox_events",
+    }
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
 
@@ -488,8 +495,9 @@ def test_mail_message_is_html():
 def test_migration_history_has_one_linear_head():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
     revisions = list(scripts.walk_revisions())
-    assert scripts.get_heads() == ["a04d79012711"]
+    assert scripts.get_heads() == ["6f47c8e912ab"]
     assert [revision.revision for revision in revisions] == [
+        "6f47c8e912ab",
         "a04d79012711",
         "dba4f311e944",
         "11d1f79aef4d",

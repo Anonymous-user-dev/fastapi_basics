@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.celery_tasks import queue_email
 from src.config import settings
 from src.db.main import get_session
-from src.db.models import User
+from src.db.models import OutboxEvent, User
 from src.db.redis import add_jti_to_blocklist, consume_token, revoke_session
 from src.errors import (
     EmailQueueUnavailable,
@@ -96,14 +96,25 @@ async def create_user_account(
         str(user_data.email), session
     ) or await user_service.get_user_by_username(user_data.username, session):
         raise UserAlreadyExists()
-    new_user = await user_service.create_user(user_data, session)
     token = create_verification_token({"email": str(user_data.email)})
     base_url = str(settings.PUBLIC_BASE_URL).rstrip("/")
     link = f"{base_url}/api/v1/auth/verify/{token}"
-    queue_email(
-        [str(user_data.email)],
-        "Verify Your email",
-        f'<h1>Verify your Email</h1><p>Please click this <a href="{link}">link</a> to verify your email</p>',
+    verification_email = OutboxEvent(
+        event_type="email.send",
+        payload={
+            "recipients": [str(user_data.email)],
+            "subject": "Verify Your email",
+            "body": (
+                "<h1>Verify your Email</h1>"
+                f'<p>Please click this <a href="{link}">link</a> '
+                "to verify your email</p>"
+            ),
+        },
+    )
+    new_user = await user_service.create_user(
+        user_data,
+        session,
+        outbox_events=[verification_email],
     )
     return {"message": "Account Created! Check email to verify your account", "user": new_user}
 
