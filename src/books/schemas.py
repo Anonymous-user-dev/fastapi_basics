@@ -14,6 +14,7 @@ class Book(BaseModel):
     published_date: date
     page_count: int
     language: str
+    version: int
     created_at: datetime
     update_at: datetime
 

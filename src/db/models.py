@@ -123,6 +123,7 @@ class Book(Base):
     published_date: Mapped[date] = mapped_column(Date)
     page_count: Mapped[int] = mapped_column(Integer)
     language: Mapped[str] = mapped_column(String(50))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     user_uid: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.uid", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     update_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

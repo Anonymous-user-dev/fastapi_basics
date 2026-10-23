@@ -75,6 +75,14 @@ class IdempotencyKeyConflict(BooklyException):
     pass
 
 
+class PreconditionRequired(BooklyException):
+    pass
+
+
+class StaleBookVersion(BooklyException):
+    pass
+
+
 def create_exception_handler(
     status_code: int, initial_detail: Any
 ) -> Callable[[Request, Exception], JSONResponse]:
@@ -109,6 +117,16 @@ def register_all_errors(app: FastAPI) -> None:
             409,
             "Idempotency key was already used for a different request",
             "idempotency_key_conflict",
+        ),
+        PreconditionRequired: (
+            428,
+            "If-Match header is required",
+            "precondition_required",
+        ),
+        StaleBookVersion: (
+            412,
+            "Book has changed since it was read",
+            "stale_book_version",
         ),
     }
     for exception, (status_code, message, error_code) in handlers.items():

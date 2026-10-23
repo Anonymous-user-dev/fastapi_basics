@@ -2,12 +2,12 @@ import hashlib
 import json
 import uuid
 
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Book, IdempotencyRecord, User
-from src.errors import IdempotencyKeyConflict, InsufficientPermission
+from src.db.models import Book, IdempotencyRecord, User, utc_now
+from src.errors import IdempotencyKeyConflict, InsufficientPermission, StaleBookVersion
 
 from .schemas import Book as BookSchema
 from .schemas import BookCreateModel, BookUpdateModel
@@ -137,20 +137,48 @@ class BookService:
     ) -> tuple[BookSchema, bool]:
         if record.request_hash != request_hash:
             raise IdempotencyKeyConflict()
-        return BookSchema.model_validate(record.response_payload), True
+        response_payload = {**record.response_payload}
+        response_payload.setdefault("version", 1)
+        return BookSchema.model_validate(response_payload), True
 
     async def update_book(
         self,
         book: Book,
         update_data: BookUpdateModel,
         session: AsyncSession,
+        expected_version: int,
     ) -> Book:
-        for key, value in update_data.model_dump(exclude_unset=True).items():
-            setattr(book, key, value)
+        values = update_data.model_dump(exclude_unset=True)
+        result = await session.execute(
+            update(Book)
+            .where(Book.uid == book.uid, Book.version == expected_version)
+            .values(
+                **values,
+                version=Book.version + 1,
+                update_at=utc_now(),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            await session.rollback()
+            raise StaleBookVersion()
         await session.commit()
         await session.refresh(book)
         return book
 
-    async def delete_book(self, book: Book, session: AsyncSession) -> None:
-        await session.delete(book)
+    async def delete_book(
+        self,
+        book: Book,
+        session: AsyncSession,
+        expected_version: int,
+    ) -> None:
+        result = await session.execute(
+            delete(Book).where(
+                Book.uid == book.uid,
+                Book.version == expected_version,
+            )
+        )
+        if result.rowcount != 1:
+            await session.rollback()
+            raise StaleBookVersion()
         await session.commit()

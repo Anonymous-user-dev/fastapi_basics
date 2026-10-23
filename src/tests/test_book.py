@@ -174,12 +174,76 @@ def test_patch_updates_only_supplied_book_fields(test_client, authenticated_head
     response = test_client.patch(
         f"{BOOKS_PREFIX}/{created['uid']}",
         json={"title": "Updated title"},
-        headers=authenticated_headers,
+        headers={**authenticated_headers, "If-Match": '"1"'},
     )
 
     assert response.status_code == 200
     assert response.json()["title"] == "Updated title"
     assert response.json()["author"] == "Test Author"
+
+
+def test_stale_book_update_cannot_overwrite_a_newer_version(
+    test_client,
+    authenticated_headers,
+):
+    created = test_client.post(
+        BOOKS_PREFIX + "/",
+        json=_book_payload(),
+        headers=authenticated_headers,
+    )
+    book = created.json()
+    version_headers = {**authenticated_headers, "If-Match": created.headers["ETag"]}
+
+    updated = test_client.patch(
+        f"{BOOKS_PREFIX}/{book['uid']}",
+        json={"title": "First writer"},
+        headers=version_headers,
+    )
+    stale = test_client.patch(
+        f"{BOOKS_PREFIX}/{book['uid']}",
+        json={"title": "Stale writer"},
+        headers=version_headers,
+    )
+    stale_delete = test_client.delete(
+        f"{BOOKS_PREFIX}/{book['uid']}",
+        headers=version_headers,
+    )
+
+    assert book["version"] == 1
+    assert created.headers["ETag"] == '"1"'
+    assert updated.status_code == 200
+    assert updated.json()["version"] == 2
+    assert updated.headers["ETag"] == '"2"'
+    assert stale.status_code == 412
+    assert stale.json()["error_code"] == "stale_book_version"
+    assert stale_delete.status_code == 412
+
+    current = test_client.get(
+        f"{BOOKS_PREFIX}/{book['uid']}",
+        headers=authenticated_headers,
+    )
+    assert current.json()["title"] == "First writer"
+    assert current.json()["version"] == 2
+
+
+def test_book_write_requires_a_version_precondition(
+    test_client,
+    authenticated_headers,
+):
+    created = test_client.post(
+        BOOKS_PREFIX + "/",
+        json=_book_payload(),
+        headers=authenticated_headers,
+    ).json()
+
+    response = test_client.patch(
+        f"{BOOKS_PREFIX}/{created['uid']}",
+        json={"title": "Unconditional update"},
+        headers=authenticated_headers,
+    )
+
+    assert response.status_code == 428
+    assert response.json()["error_code"] == "precondition_required"
 
 
 def test_patch_rejects_null_for_required_book_fields(test_client, authenticated_headers):
@@ -201,7 +265,10 @@ def test_delete_book_removes_it(test_client, authenticated_headers):
         BOOKS_PREFIX + "/", json=_book_payload(), headers=authenticated_headers
     ).json()["uid"]
 
-    response = test_client.delete(f"{BOOKS_PREFIX}/{uid}", headers=authenticated_headers)
+    response = test_client.delete(
+        f"{BOOKS_PREFIX}/{uid}",
+        headers={**authenticated_headers, "If-Match": '"1"'},
+    )
 
     assert response.status_code == 204
     missing = test_client.get(f"{BOOKS_PREFIX}/{uid}", headers=authenticated_headers)
@@ -246,9 +313,12 @@ def test_admin_can_update_and_delete_any_book(
     update = test_client.patch(
         f"{BOOKS_PREFIX}/{book_uid}",
         json={"title": "Admin edit"},
-        headers=admin_headers,
+        headers={**admin_headers, "If-Match": '"1"'},
     )
-    delete = test_client.delete(f"{BOOKS_PREFIX}/{book_uid}", headers=admin_headers)
+    delete = test_client.delete(
+        f"{BOOKS_PREFIX}/{book_uid}",
+        headers={**admin_headers, "If-Match": '"2"'},
+    )
 
     assert update.status_code == 200
     assert update.json()["title"] == "Admin edit"
@@ -551,8 +621,9 @@ def test_mail_message_is_html():
 def test_migration_history_has_one_linear_head():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
     revisions = list(scripts.walk_revisions())
-    assert scripts.get_heads() == ["9c3a74e5b821"]
+    assert scripts.get_heads() == ["c28f406bd173"]
     assert [revision.revision for revision in revisions] == [
+        "c28f406bd173",
         "9c3a74e5b821",
         "6f47c8e912ab",
         "a04d79012711",
