@@ -263,6 +263,53 @@ def test_outbox_relay_recovers_expired_leases_without_stealing_active_ones(
     assert active.locked_by == "healthy-worker"
 
 
+def test_outbox_relay_dead_letters_events_after_the_attempt_limit(session_factory):
+    from src.config import settings
+    from src.outbox import relay_outbox_events
+
+    async def rejected_sender(recipients, subject, body):
+        raise ValueError("mail provider rejected the message")
+
+    async def exercise_relay():
+        async with session_factory() as session:
+            event = OutboxEvent(
+                event_type="email.send",
+                payload={
+                    "recipients": ["invalid@example.com"],
+                    "subject": "Never deliver",
+                    "body": "bad payload",
+                },
+                attempts=settings.OUTBOX_MAX_ATTEMPTS - 1,
+            )
+            session.add(event)
+            await session.commit()
+            event_id = event.uid
+
+        first_result = await relay_outbox_events(
+            session_factory,
+            rejected_sender,
+            worker_id="relay-1",
+        )
+        second_result = await relay_outbox_events(
+            session_factory,
+            rejected_sender,
+            worker_id="relay-2",
+        )
+
+        async with session_factory() as session:
+            saved_event = await session.get(OutboxEvent, event_id)
+            return first_result, second_result, saved_event
+
+    first_result, second_result, event = asyncio.run(exercise_relay())
+    assert first_result == {"claimed": 1, "processed": 0, "failed": 1}
+    assert second_result == {"claimed": 0, "processed": 0, "failed": 0}
+    assert event.status == "failed"
+    assert event.attempts == settings.OUTBOX_MAX_ATTEMPTS
+    assert event.last_error == "mail provider rejected the message"
+    assert event.locked_by is None
+    assert event.locked_until is None
+
+
 def _disable_email(monkeypatch):
     from src import celery_tasks
 

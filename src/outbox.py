@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.config import settings
 from src.db.models import OutboxEvent, utc_now
 from src.observability import log_json
 
@@ -118,9 +119,12 @@ async def _release_for_retry(
         if event is None:
             return False
 
-        retry_delay = min(2**event.attempts, MAX_RETRY_DELAY_SECONDS)
-        event.status = "pending"
-        event.available_at = utc_now() + timedelta(seconds=retry_delay)
+        if event.attempts >= settings.OUTBOX_MAX_ATTEMPTS:
+            event.status = "failed"
+        else:
+            retry_delay = min(2**event.attempts, MAX_RETRY_DELAY_SECONDS)
+            event.status = "pending"
+            event.available_at = utc_now() + timedelta(seconds=retry_delay)
         event.locked_by = None
         event.locked_until = None
         event.last_error = str(error)[:2000]

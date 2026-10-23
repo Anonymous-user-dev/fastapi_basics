@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     AUTH_RATE_LIMIT: int = Field(default=5, ge=1)
     AUTH_RATE_WINDOW_SECONDS: int = Field(default=60, ge=1)
+    OUTBOX_MAX_ATTEMPTS: int = Field(default=8, ge=1, le=100)
     CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     MAIL_USERNAME: str = ""
     MAIL_PASSWORD: str = ""

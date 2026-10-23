@@ -31,7 +31,7 @@ class OutboxEvent(Base):
     __tablename__ = "outbox_events"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'processing', 'processed')",
+            "status IN ('pending', 'processing', 'processed', 'failed')",
             name="ck_outbox_events_status",
         ),
     )

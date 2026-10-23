@@ -704,8 +704,9 @@ def test_mail_message_is_html():
 def test_migration_history_has_one_linear_head():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
     revisions = list(scripts.walk_revisions())
-    assert scripts.get_heads() == ["c28f406bd173"]
+    assert scripts.get_heads() == ["e31a7d902c64"]
     assert [revision.revision for revision in revisions] == [
+        "e31a7d902c64",
         "c28f406bd173",
         "9c3a74e5b821",
         "6f47c8e912ab",
