@@ -484,6 +484,17 @@ def test_celery_service_receives_application_configuration():
     assert "JWT_SECRET" in celery_environment
 
 
+def test_outbox_relay_is_scheduled_and_has_database_access():
+    schedule = c_app.conf.beat_schedule["relay-outbox-events"]
+    compose = yaml.safe_load(Path("compose.yml").read_text())
+
+    assert schedule["task"] == "src.celery_tasks.relay_outbox"
+    assert schedule["schedule"] == 5.0
+    assert "celery-beat" in compose["services"]
+    assert "db" in compose["services"]["celery"]["depends_on"]
+    assert "db" in compose["services"]["celery-beat"]["depends_on"]
+
+
 def test_mail_message_is_html():
     from src.mail import create_message
 

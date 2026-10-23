@@ -1,10 +1,11 @@
 import asyncio
+from datetime import timedelta
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from src.db.models import OutboxEvent, User
+from src.db.models import OutboxEvent, User, utc_now
 
 AUTH_PREFIX = "/api/v1/auth"
 
@@ -102,6 +103,156 @@ def test_user_and_outbox_event_roll_back_together(session_factory, signup_payloa
             )
 
     assert asyncio.run(create_duplicate_user()) == 1
+
+
+def test_outbox_relay_delivers_email_and_marks_event_processed(session_factory):
+    from src.outbox import relay_outbox_events
+
+    delivered = []
+
+    async def sender(recipients, subject, body):
+        delivered.append((recipients, subject, body))
+
+    async def exercise_relay():
+        async with session_factory() as session:
+            event = OutboxEvent(
+                event_type="email.send",
+                payload={
+                    "recipients": ["reader@example.com"],
+                    "subject": "Verify",
+                    "body": "<p>verification link</p>",
+                },
+            )
+            session.add(event)
+            await session.commit()
+            event_id = event.uid
+
+        result = await relay_outbox_events(
+            session_factory,
+            sender,
+            worker_id="relay-1",
+        )
+
+        async with session_factory() as session:
+            saved_event = await session.get(OutboxEvent, event_id)
+            return result, saved_event
+
+    result, event = asyncio.run(exercise_relay())
+    assert result == {"claimed": 1, "processed": 1, "failed": 0}
+    assert delivered == [
+        (["reader@example.com"], "Verify", "<p>verification link</p>")
+    ]
+    assert event.status == "processed"
+    assert event.attempts == 1
+    assert event.processed_at is not None
+    assert event.locked_by is None
+    assert event.locked_until is None
+
+
+def test_outbox_relay_releases_failed_email_for_retry(session_factory):
+    from src.outbox import relay_outbox_events
+
+    async def unavailable_sender(recipients, subject, body):
+        raise ConnectionError("SMTP is unavailable")
+
+    async def exercise_relay():
+        async with session_factory() as session:
+            event = OutboxEvent(
+                event_type="email.send",
+                payload={
+                    "recipients": ["reader@example.com"],
+                    "subject": "Verify",
+                    "body": "<p>verification link</p>",
+                },
+            )
+            session.add(event)
+            await session.commit()
+            event_id = event.uid
+
+        result = await relay_outbox_events(
+            session_factory,
+            unavailable_sender,
+            worker_id="relay-1",
+        )
+
+        async with session_factory() as session:
+            saved_event = await session.get(OutboxEvent, event_id)
+            return result, saved_event
+
+    result, event = asyncio.run(exercise_relay())
+    assert result == {"claimed": 1, "processed": 0, "failed": 1}
+    assert event.status == "pending"
+    assert event.attempts == 1
+    assert event.processed_at is None
+    assert event.available_at > event.created_at
+    assert event.locked_by is None
+    assert event.locked_until is None
+    assert event.last_error == "SMTP is unavailable"
+
+
+def test_outbox_relay_recovers_expired_leases_without_stealing_active_ones(
+    session_factory,
+):
+    from src.outbox import relay_outbox_events
+
+    delivered = []
+
+    async def sender(recipients, subject, body):
+        delivered.extend(recipients)
+
+    async def exercise_relay():
+        now = utc_now()
+        async with session_factory() as session:
+            expired = OutboxEvent(
+                event_type="email.send",
+                payload={
+                    "recipients": ["expired@example.com"],
+                    "subject": "Expired lease",
+                    "body": "retry me",
+                },
+                status="processing",
+                attempts=1,
+                locked_by="dead-worker",
+                locked_until=now - timedelta(seconds=1),
+            )
+            active = OutboxEvent(
+                event_type="email.send",
+                payload={
+                    "recipients": ["active@example.com"],
+                    "subject": "Active lease",
+                    "body": "leave me alone",
+                },
+                status="processing",
+                attempts=1,
+                locked_by="healthy-worker",
+                locked_until=now + timedelta(minutes=1),
+            )
+            session.add_all([expired, active])
+            await session.commit()
+            expired_id = expired.uid
+            active_id = active.uid
+
+        result = await relay_outbox_events(
+            session_factory,
+            sender,
+            worker_id="replacement-worker",
+        )
+
+        async with session_factory() as session:
+            return (
+                result,
+                await session.get(OutboxEvent, expired_id),
+                await session.get(OutboxEvent, active_id),
+            )
+
+    result, expired, active = asyncio.run(exercise_relay())
+    assert result == {"claimed": 1, "processed": 1, "failed": 0}
+    assert delivered == ["expired@example.com"]
+    assert expired.status == "processed"
+    assert expired.attempts == 2
+    assert active.status == "processing"
+    assert active.attempts == 1
+    assert active.locked_by == "healthy-worker"
 
 
 def _disable_email(monkeypatch):

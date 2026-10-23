@@ -53,6 +53,32 @@ services:
     volumes:
       - .:/app
     depends_on:
+      - db
+      - redis
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SERVER: ${MAIL_SERVER:-localhost}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_FROM: ${MAIL_FROM:-noreply@example.com}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Bookly}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+    networks:
+      - app-network
+
+  celery-beat:
+    build: .
+    command: celery -A src.celery_tasks.c_app beat --loglevel=INFO
+    volumes:
+      - .:/app
+    depends_on:
+      - db
       - redis
     environment:
       DATABASE_URL: ${DATABASE_URL}
