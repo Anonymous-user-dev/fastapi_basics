@@ -7,6 +7,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.db.models import OutboxEvent, utc_now
+from src.observability import log_json
 
 EmailSender = Callable[[list[str], str, str], Awaitable[None]]
 logger = logging.getLogger(__name__)
@@ -142,8 +143,17 @@ async def _deliver_event(
         if event_type != "email.send":
             raise ValueError(f"Unsupported outbox event type: {event_type}")
         await sender(payload["recipients"], payload["subject"], payload["body"])
-    except Exception as error:
-        logger.exception("Outbox event %s delivery failed", event_id)
+    except Exception as error:  # noqa: BLE001 - every failure must release the lease
+        log_json(
+            logger,
+            logging.ERROR,
+            "outbox.delivery.failed",
+            exc_info=True,
+            event_id=event_id,
+            worker_id=worker_id,
+            error_type=type(error).__name__,
+            error=str(error),
+        )
         await _release_for_retry(session_factory, event_id, worker_id, error)
         return False
 

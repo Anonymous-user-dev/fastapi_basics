@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 from datetime import timedelta
 
 import pytest
@@ -149,8 +151,10 @@ def test_outbox_relay_delivers_email_and_marks_event_processed(session_factory):
     assert event.locked_until is None
 
 
-def test_outbox_relay_releases_failed_email_for_retry(session_factory):
+def test_outbox_relay_releases_failed_email_for_retry(session_factory, caplog):
     from src.outbox import relay_outbox_events
+
+    caplog.set_level(logging.ERROR, logger="src.outbox")
 
     async def unavailable_sender(recipients, subject, body):
         raise ConnectionError("SMTP is unavailable")
@@ -188,6 +192,10 @@ def test_outbox_relay_releases_failed_email_for_retry(session_factory):
     assert event.locked_by is None
     assert event.locked_until is None
     assert event.last_error == "SMTP is unavailable"
+    failure_log = json.loads(caplog.records[-1].message)
+    assert failure_log["event"] == "outbox.delivery.failed"
+    assert failure_log["worker_id"] == "relay-1"
+    assert failure_log["error_type"] == "ConnectionError"
 
 
 def test_outbox_relay_recovers_expired_leases_without_stealing_active_ones(

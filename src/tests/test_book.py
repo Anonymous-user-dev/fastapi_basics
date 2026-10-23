@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 import uuid
 from pathlib import Path
 
@@ -337,6 +339,39 @@ def test_create_book_validates_date_and_page_count(test_client, authenticated_he
 
 def test_books_require_authentication(test_client):
     assert test_client.get(BOOKS_PREFIX + "/").status_code in {401, 403}
+
+
+def test_request_id_is_propagated_and_logged(test_client, caplog):
+    caplog.set_level(logging.INFO, logger="bookly.access")
+
+    response = test_client.get(
+        "/api/v1/openapi.json",
+        headers={
+            "X-Request-ID": "checkout-7f31",
+            "Authorization": "Bearer do-not-log-this",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "checkout-7f31"
+    access_log = json.loads(caplog.records[-1].message)
+    assert access_log["event"] == "http.request.completed"
+    assert access_log["request_id"] == "checkout-7f31"
+    assert access_log["method"] == "GET"
+    assert access_log["path"] == "/api/v1/openapi.json"
+    assert access_log["status_code"] == 200
+    assert access_log["duration_ms"] >= 0
+    assert "do-not-log-this" not in caplog.text
+
+
+def test_invalid_request_id_is_replaced(test_client):
+    response = test_client.get(
+        "/api/v1/openapi.json",
+        headers={"X-Request-ID": "not a safe request id"},
+    )
+
+    assert response.status_code == 200
+    assert uuid.UUID(response.headers["X-Request-ID"])
 
 
 def test_models_use_sqlalchemy_declarative_base():
