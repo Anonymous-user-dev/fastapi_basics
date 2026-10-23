@@ -374,6 +374,40 @@ def test_invalid_request_id_is_replaced(test_client):
     assert uuid.UUID(response.headers["X-Request-ID"])
 
 
+def test_liveness_and_readiness_report_service_health(test_client):
+    live = test_client.get("/health/live")
+    ready = test_client.get("/health/ready")
+
+    assert live.status_code == 200
+    assert live.json() == {"status": "ok"}
+    assert ready.status_code == 200, ready.json()
+    assert ready.json() == {
+        "status": "ready",
+        "checks": {"database": "ok", "redis": "ok"},
+    }
+
+
+def test_readiness_fails_closed_when_a_dependency_is_unavailable(
+    test_client,
+    monkeypatch,
+):
+    from src import health
+
+    async def unavailable_redis():
+        raise ConnectionError("secret infrastructure details")
+
+    monkeypatch.setattr(health, "check_redis", unavailable_redis)
+
+    response = test_client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "checks": {"database": "ok", "redis": "unavailable"},
+    }
+    assert "secret infrastructure details" not in response.text
+
+
 def test_models_use_sqlalchemy_declarative_base():
     assert issubclass(Base, DeclarativeBase)
     assert set(Base.metadata.tables) == {
@@ -643,6 +677,20 @@ def test_outbox_relay_is_scheduled_and_has_database_access():
     assert "celery-beat" in compose["services"]
     assert "db" in compose["services"]["celery"]["depends_on"]
     assert "db" in compose["services"]["celery-beat"]["depends_on"]
+
+
+def test_compose_waits_for_healthy_dependencies():
+    services = yaml.safe_load(Path("compose.yml").read_text())["services"]
+
+    assert services["web"]["healthcheck"]
+    assert services["db"]["healthcheck"]
+    assert services["redis"]["healthcheck"]
+    for service_name in ("web", "celery", "celery-beat"):
+        assert services[service_name]["depends_on"]["db"]["condition"] == "service_healthy"
+        assert (
+            services[service_name]["depends_on"]["redis"]["condition"]
+            == "service_healthy"
+        )
 
 
 def test_mail_message_is_html():
