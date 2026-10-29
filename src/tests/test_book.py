@@ -8,7 +8,7 @@ import pytest
 import yaml
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import UniqueConstraint, create_engine, func, select, text
 from sqlalchemy.orm import DeclarativeBase
 
 from src import app
@@ -497,6 +497,28 @@ def test_models_use_sqlalchemy_declarative_base():
     Base.metadata.create_all(engine)
 
 
+def test_unique_lookup_columns_do_not_define_redundant_indexes():
+    expected_constraints = {
+        "users": {("email",), ("username",)},
+        "tags": {("name",)},
+    }
+
+    for table_name, expected_columns in expected_constraints.items():
+        table = Base.metadata.tables[table_name]
+        actual_constraints = {
+            tuple(column.name for column in constraint.columns)
+            for constraint in table.constraints
+            if isinstance(constraint, UniqueConstraint)
+        }
+        indexed_columns = {
+            tuple(column.name for column in index.columns)
+            for index in table.indexes
+        }
+
+        assert actual_constraints == expected_columns
+        assert indexed_columns.isdisjoint(expected_columns)
+
+
 def test_create_list_and_delete_tags(test_client, authenticated_headers):
     created = test_client.post(
         TAGS_PREFIX + "/", json={"name": "fiction"}, headers=authenticated_headers
@@ -783,8 +805,9 @@ def test_mail_message_is_html():
 def test_migration_history_has_one_linear_head():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
     revisions = list(scripts.walk_revisions())
-    assert scripts.get_heads() == ["e31a7d902c64"]
+    assert scripts.get_heads() == ["f7b2c14d83aa"]
     assert [revision.revision for revision in revisions] == [
+        "f7b2c14d83aa",
         "e31a7d902c64",
         "c28f406bd173",
         "9c3a74e5b821",
