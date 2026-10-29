@@ -14,7 +14,7 @@ from sqlalchemy.orm import DeclarativeBase
 from src import app
 from src.celery_tasks import c_app
 from src.config import settings
-from src.db.models import Base, User
+from src.db.models import Base, OutboxEvent, User
 from src.db.models import Book as BookModel
 
 BOOKS_PREFIX = "/api/v1/books"
@@ -325,6 +325,58 @@ def test_admin_can_update_and_delete_any_book(
     assert update.status_code == 200
     assert update.json()["title"] == "Admin edit"
     assert delete.status_code == 204
+
+
+def test_only_admins_can_inspect_and_replay_dead_letters(
+    test_client,
+    authenticated_headers,
+    session_factory,
+    monkeypatch,
+):
+    async def add_dead_letter():
+        async with session_factory() as session:
+            event = OutboxEvent(
+                event_type="email.send",
+                payload={
+                    "recipients": ["reader@example.com"],
+                    "subject": "Sensitive subject",
+                    "body": "Sensitive body",
+                },
+                status="failed",
+                attempts=8,
+                last_error="mailbox rejected",
+            )
+            session.add(event)
+            await session.commit()
+            return event.uid
+
+    event_id = asyncio.run(add_dead_letter())
+    endpoint = "/api/v1/admin/outbox/dead-letters"
+
+    denied = test_client.get(endpoint, headers=authenticated_headers)
+    admin_headers = _headers_for_new_user(
+        test_client,
+        session_factory,
+        monkeypatch,
+        role="admin",
+    )
+    listed = test_client.get(endpoint, headers=admin_headers)
+    replayed = test_client.post(
+        f"{endpoint}/{event_id}/replay",
+        headers=admin_headers,
+    )
+    listed_after_replay = test_client.get(endpoint, headers=admin_headers)
+
+    assert denied.status_code == 403
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["uid"] == str(event_id)
+    assert listed.json()[0]["last_error"] == "mailbox rejected"
+    assert "payload" not in listed.json()[0]
+    assert replayed.status_code == 200
+    assert replayed.json()["status"] == "pending"
+    assert replayed.json()["attempts"] == 0
+    assert listed_after_replay.json() == []
 
 
 def test_create_book_validates_date_and_page_count(test_client, authenticated_headers):

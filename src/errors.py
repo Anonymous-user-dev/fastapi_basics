@@ -83,6 +83,10 @@ class StaleBookVersion(BooklyException):
     pass
 
 
+class OutboxEventNotFound(BooklyException):
+    pass
+
+
 def create_exception_handler(
     status_code: int, initial_detail: Any
 ) -> Callable[[Request, Exception], JSONResponse]:
@@ -127,6 +131,11 @@ def register_all_errors(app: FastAPI) -> None:
             412,
             "Book has changed since it was read",
             "stale_book_version",
+        ),
+        OutboxEventNotFound: (
+            404,
+            "Failed outbox event not found",
+            "outbox_event_not_found",
         ),
     }
     for exception, (status_code, message, error_code) in handlers.items():

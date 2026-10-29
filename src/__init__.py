@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from src.admin import admin_router
 from src.auth.routes import auth_router
 from src.books.routes import book_router
 from src.errors import register_all_errors
@@ -37,4 +38,5 @@ app.include_router(auth_router, prefix=f"{version_prefix}/auth", tags=["auth"])
 app.include_router(book_router, prefix=f"{version_prefix}/books", tags=["books"])
 app.include_router(tags_router, prefix=f"{version_prefix}/tags", tags=["tags"])
 app.include_router(review_router, prefix=f"{version_prefix}/reviews", tags=["reviews"])
+app.include_router(admin_router, prefix=version_prefix)
 app.include_router(health_router)
