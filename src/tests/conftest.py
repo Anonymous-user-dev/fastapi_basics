@@ -7,6 +7,7 @@ import pytest
 warnings.filterwarnings("ignore", message="Using `httpx` with `starlette.testclient` is deprecated")
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -18,6 +19,7 @@ os.environ.setdefault("REDIS_URL", "memory://")
 from src import app
 from src.db.main import get_session
 from src.db.models import Base
+from src.health import EXPECTED_DATABASE_REVISION
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +43,16 @@ def session_factory(tmp_path):
     async def create_schema():
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.execute(
+                text(
+                    "CREATE TABLE alembic_version "
+                    "(version_num VARCHAR(32) NOT NULL)"
+                )
+            )
+            await connection.execute(
+                text("INSERT INTO alembic_version (version_num) VALUES (:revision)"),
+                {"revision": EXPECTED_DATABASE_REVISION},
+            )
 
     asyncio.run(create_schema())
     yield factory

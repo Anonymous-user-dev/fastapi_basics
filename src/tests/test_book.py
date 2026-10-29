@@ -8,7 +8,7 @@ import pytest
 import yaml
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import DeclarativeBase
 
 from src import app
@@ -460,6 +460,28 @@ def test_readiness_fails_closed_when_a_dependency_is_unavailable(
     assert "secret infrastructure details" not in response.text
 
 
+def test_database_readiness_rejects_a_stale_migration(session_factory):
+    from src.health import check_database
+
+    async def check_stale_database():
+        async with session_factory() as session:
+            await session.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS alembic_version "
+                    "(version_num VARCHAR(32) NOT NULL)"
+                )
+            )
+            await session.execute(text("DELETE FROM alembic_version"))
+            await session.execute(
+                text("INSERT INTO alembic_version (version_num) VALUES ('stale')")
+            )
+            await session.commit()
+            with pytest.raises(RuntimeError, match="migration"):
+                await check_database(session)
+
+    asyncio.run(check_stale_database())
+
+
 def test_models_use_sqlalchemy_declarative_base():
     assert issubclass(Base, DeclarativeBase)
     assert set(Base.metadata.tables) == {
@@ -734,10 +756,15 @@ def test_outbox_relay_is_scheduled_and_has_database_access():
 def test_compose_waits_for_healthy_dependencies():
     services = yaml.safe_load(Path("compose.yml").read_text())["services"]
 
+    assert services["migrate"]["command"] == "alembic upgrade head"
     assert services["web"]["healthcheck"]
     assert services["db"]["healthcheck"]
     assert services["redis"]["healthcheck"]
     for service_name in ("web", "celery", "celery-beat"):
+        assert (
+            services[service_name]["depends_on"]["migrate"]["condition"]
+            == "service_completed_successfully"
+        )
         assert services[service_name]["depends_on"]["db"]["condition"] == "service_healthy"
         assert (
             services[service_name]["depends_on"]["redis"]["condition"]
